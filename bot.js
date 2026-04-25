@@ -2,8 +2,8 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const xml2js = require("xml2js");
 
 const TOKEN = process.env.TOKEN;
-const CHANNEL_ID = "1497600831405555926";
-const STATS_XML_URL = "http://si-12625.dg.vg:8080/feed/dedicated-server-stats.xml?code=6bqwp6ka35e99sng7izc3gly1r2h";
+const CHANNEL_ID = process.env.CHANNEL_ID;
+const STATS_XML_URL = process.env.STATS_XML_URL;
 
 const client = new Client({
   intents: [
