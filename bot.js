@@ -1,9 +1,12 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-const xml2js = require("xml2js");
+const net = require("net");
 
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
-const STATS_XML_URL = process.env.STATS_XML_URL;
+
+const SERVER_IP = "51.68.65.34";
+const SERVER_PORT = 10000;
+const SERVER_NAME = "Dumax FS25";
 
 const client = new Client({
   intents: [
@@ -15,111 +18,64 @@ const client = new Client({
 
 let statusMessage = null;
 
-async function getServerData() {
-  try {
-    const response = await fetch(STATS_XML_URL);
-    if (!response.ok) throw new Error("XML inaccessible");
+function checkServer() {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(3000);
 
-    const xml = await response.text();
+    socket.connect(SERVER_PORT, SERVER_IP, () => {
+      socket.destroy();
+      resolve(true);
+    });
 
-    const parser = new xml2js.Parser();
-    const result = await parser.parseStringPromise(xml);
+    socket.on("error", () => resolve(false));
 
-    const server = result.Server;
-    const info = server.$ || {};
-    const slots = server.Slots?.[0]?.$ || {};
-    const mods = server.Mods?.[0]?.Mod || [];
-
-    let hour = "--";
-    if (info.dayTime) {
-      const time = parseInt(info.dayTime);
-      hour = Math.floor((time / 3600000) % 24);
-      hour = hour.toString().padStart(2, "0") + "h";
-    }
-
-    return {
-      online: true,
-      name: info.name || "Dumax FS25",
-      players: slots.numUsed || "0",
-      maxPlayers: slots.capacity || "6",
-      map: info.mapName || "Inconnue",
-      hour: hour,
-      mods: mods.length
-    };
-  } catch (err) {
-    console.log("❌ Erreur XML :", err.message);
-
-    return {
-      online: false,
-      name: "Dumax FS25",
-      players: "0",
-      maxPlayers: "6",
-      map: "Inconnue",
-      hour: "--",
-      mods: 0
-    };
-  }
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
 }
 
 async function updatePanel() {
-  try {
-    const data = await getServerData();
+  const online = await checkServer();
 
-    const embed = new EmbedBuilder()
-      .setTitle("📊 Panel serveur FS25")
-      .setDescription(`Serveur : **${data.name}**`)
-      .addFields(
-        {
-          name: "🚜 Statut",
-          value: data.online ? "🟢 En ligne" : "🔴 Hors ligne",
-          inline: true
-        },
-        {
-          name: "👥 Joueurs",
-          value: `${data.players} / ${data.maxPlayers}`,
-          inline: true
-        },
-        {
-          name: "🗺️ Carte",
-          value: data.map,
-          inline: true
-        },
-        {
-          name: "⏰ Heure IG",
-          value: data.hour,
-          inline: true
-        },
-        {
-          name: "📦 Mods",
-          value: `${data.mods}`,
-          inline: true
-        }
-      )
-      .setColor(data.online ? 0x00ff00 : 0xff0000)
-      .setFooter({
-        text: "Actualisation toutes les 30 secondes • Créé et géré par Dumax"
-      })
-      .setTimestamp();
+  const embed = new EmbedBuilder()
+    .setTitle("📊 Panel de serveur")
+    .setDescription(`Serveur : **${SERVER_NAME}**`)
+    .addFields(
+      {
+        name: "🚜 Statut",
+        value: online ? "🟢 En ligne" : "🔴 Hors ligne",
+        inline: true
+      },
+      {
+        name: "🌐 Adresse",
+        value: `${SERVER_IP}:${SERVER_PORT}`,
+        inline: true
+      }
+    )
+    .setColor(online ? 0x2ecc71 : 0xe74c3c)
+    .setFooter({
+      text: "Actualisation toutes les 30 secondes • Créé et géré par Dumax"
+    })
+    .setTimestamp();
 
-    const channel = await client.channels.fetch(CHANNEL_ID);
+  const channel = await client.channels.fetch(CHANNEL_ID);
+
+  if (!statusMessage) {
+    const messages = await channel.messages.fetch({ limit: 10 });
+    statusMessage = messages.find(m => m.author.id === client.user.id);
 
     if (!statusMessage) {
-      const messages = await channel.messages.fetch({ limit: 10 });
-      statusMessage = messages.find(m => m.author.id === client.user.id);
-
-      if (!statusMessage) {
-        statusMessage = await channel.send({ embeds: [embed] });
-        console.log("📩 Message panel créé");
-        return;
-      }
+      statusMessage = await channel.send({ embeds: [embed] });
+      console.log("📩 Message panel créé");
+      return;
     }
-
-    await statusMessage.edit({ embeds: [embed] });
-    console.log("🔄 Panel mis à jour");
-
-  } catch (err) {
-    console.log("❌ Erreur update :", err.message);
   }
+
+  await statusMessage.edit({ embeds: [embed] });
+  console.log("🔄 Panel mis à jour");
 }
 
 client.once("ready", async () => {
@@ -133,7 +89,6 @@ client.once("ready", async () => {
   }, 30000);
 });
 
-// 💬 Commande !say avec suppression
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
