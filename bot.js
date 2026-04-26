@@ -9,12 +9,14 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const AMENDES_CHANNEL_ID = process.env.AMENDES_CHANNEL_ID;
 
 const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVER_NAME = "Dumax FS25";
 
 const DATA_FILE = "./stats.json";
 const ENTREPRISES_FILE = "./entreprises.json";
+const AMENDES_FILE = "./amendes.json";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -28,6 +30,7 @@ let stats = {
 };
 
 let entreprises = [];
+let amendes = [];
 
 let panelMessage = null;
 let entreprisesMessage = null;
@@ -45,11 +48,16 @@ function loadData() {
   if (fs.existsSync(ENTREPRISES_FILE)) {
     entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
   }
+
+  if (fs.existsSync(AMENDES_FILE)) {
+    amendes = JSON.parse(fs.readFileSync(AMENDES_FILE, "utf8"));
+  }
 }
 
 function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
   fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
+  fs.writeFileSync(AMENDES_FILE, JSON.stringify(amendes, null, 2));
 }
 
 function getColorByStatus() {
@@ -57,6 +65,10 @@ function getColorByStatus() {
   if (stats.statut.includes("développement")) return 0xf39c12;
   if (stats.statut.includes("Hors ligne")) return 0xe74c3c;
   return 0x3498db;
+}
+
+function getNextAmendeNumber() {
+  return String(amendes.length + 1).padStart(4, "0");
 }
 
 async function updatePanel() {
@@ -67,36 +79,14 @@ async function updatePanel() {
       `🌾 _Tableau de suivi officiel du serveur agricole_`
     )
     .addFields(
-      {
-        name: "📡 STATUT",
-        value: `\`\`\`${stats.statut}\`\`\``,
-        inline: false
-      },
-      {
-        name: "🏡 FERMES TOTALES",
-        value: `\`\`\`${stats.fermesTotales}\`\`\``,
-        inline: true
-      },
-      {
-        name: "✅ FERMES REPRISES",
-        value: `\`\`\`${stats.fermesReprises}\`\`\``,
-        inline: true
-      },
-      {
-        name: "🧩 MODS INSTALLÉS",
-        value: `\`\`\`${stats.mods}\`\`\``,
-        inline: true
-      },
-      {
-        name: "━━━━━━━━━━━━━━━━━━━━",
-        value: "📌 _Informations mises à jour par l’équipe staff._",
-        inline: false
-      }
+      { name: "📡 STATUT", value: `\`\`\`${stats.statut}\`\`\``, inline: false },
+      { name: "🏡 FERMES TOTALES", value: `\`\`\`${stats.fermesTotales}\`\`\``, inline: true },
+      { name: "✅ FERMES REPRISES", value: `\`\`\`${stats.fermesReprises}\`\`\``, inline: true },
+      { name: "🧩 MODS INSTALLÉS", value: `\`\`\`${stats.mods}\`\`\``, inline: true },
+      { name: "━━━━━━━━━━━━━━━━━━━━", value: "📌 _Informations mises à jour par l’équipe staff._", inline: false }
     )
     .setColor(getColorByStatus())
-    .setFooter({
-      text: "Dumax FS25 • Panel officiel"
-    })
+    .setFooter({ text: "Dumax FS25 • Panel officiel" })
     .setTimestamp();
 
   const channel = await client.channels.fetch(CHANNEL_ID);
@@ -125,13 +115,9 @@ async function updateEntreprises() {
 
   const embed = new EmbedBuilder()
     .setTitle("🏢 ━━━━━━━━━━ ENTREPRISES ━━━━━━━━━━")
-    .setDescription(
-      `📋 **Liste officielle des entreprises reprises**\n\n${description}`
-    )
+    .setDescription(`📋 **Liste officielle des entreprises reprises**\n\n${description}`)
     .setColor(0x3498db)
-    .setFooter({
-      text: "Dumax FS25 • Registre des entreprises"
-    })
+    .setFooter({ text: "Dumax FS25 • Registre des entreprises" })
     .setTimestamp();
 
   const channel = await client.channels.fetch(CHANNEL_ID);
@@ -154,58 +140,35 @@ const commands = [
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
-    options: [
-      {
-        name: "statut",
-        description: "Choix du statut",
-        type: 3,
-        required: true,
-        choices: [
-          { name: "🟢 En ligne", value: "online" },
-          { name: "🟠 En développement (staff only)", value: "dev" },
-          { name: "🔴 Hors ligne", value: "offline" }
-        ]
-      }
-    ]
+    options: [{
+      name: "statut",
+      description: "Choix du statut",
+      type: 3,
+      required: true,
+      choices: [
+        { name: "🟢 En ligne", value: "online" },
+        { name: "🟠 En développement (staff only)", value: "dev" },
+        { name: "🔴 Hors ligne", value: "offline" }
+      ]
+    }]
   },
   {
     name: "fermestotales",
     description: "Définir le nombre de fermes totales",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre total de fermes",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre total de fermes", type: 3, required: true }]
   },
   {
     name: "fermesreprises",
     description: "Définir le nombre de fermes reprises",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre de fermes reprises",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre de fermes reprises", type: 3, required: true }]
   },
   {
     name: "mods",
     description: "Définir le nombre de mods installés",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre de mods installés",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre de mods installés", type: 3, required: true }]
   },
   {
     name: "maj",
@@ -217,18 +180,8 @@ const commands = [
     description: "Ajouter une entreprise",
     type: 1,
     options: [
-      {
-        name: "nom",
-        description: "Nom de l’entreprise",
-        type: 3,
-        required: true
-      },
-      {
-        name: "patron",
-        description: "Patron de l’entreprise",
-        type: 6,
-        required: true
-      },
+      { name: "nom", description: "Nom de l’entreprise", type: 3, required: true },
+      { name: "patron", description: "Patron de l’entreprise", type: 6, required: true },
       {
         name: "recrutement",
         description: "Statut du recrutement",
@@ -245,28 +198,14 @@ const commands = [
     name: "entreprise-retirer",
     description: "Retirer une entreprise",
     type: 1,
-    options: [
-      {
-        name: "entreprise",
-        description: "Entreprise à retirer",
-        type: 3,
-        required: true,
-        autocomplete: true
-      }
-    ]
+    options: [{ name: "entreprise", description: "Entreprise à retirer", type: 3, required: true, autocomplete: true }]
   },
   {
     name: "recrutement",
     description: "Modifier le recrutement d’une entreprise",
     type: 1,
     options: [
-      {
-        name: "entreprise",
-        description: "Entreprise concernée",
-        type: 3,
-        required: true,
-        autocomplete: true
-      },
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true },
       {
         name: "statut",
         description: "Statut du recrutement",
@@ -277,6 +216,24 @@ const commands = [
           { name: "🔴 Fermé", value: "closed" }
         ]
       }
+    ]
+  },
+  {
+    name: "amende",
+    description: "Émettre une amende RP à une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true },
+      { name: "montant", description: "Montant de l’amende", type: 3, required: true },
+      { name: "motif", description: "Motif de l’amende", type: 3, required: true }
+    ]
+  },
+  {
+    name: "amendes-historique",
+    description: "Afficher l’historique des amendes d’une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
     ]
   }
 ];
@@ -395,6 +352,103 @@ client.on("interactionCreate", async interaction => {
     }
 
     entreprise.recrutement = statut === "open" ? "🟢 Ouvert" : "🔴 Fermé";
+  }
+
+  if (cmd === "amende") {
+    const nom = interaction.options.getString("entreprise");
+    const montant = interaction.options.getString("montant");
+    const motif = interaction.options.getString("motif");
+
+    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+    if (!entreprise) {
+      return interaction.reply({
+        content: "❌ Entreprise introuvable.",
+        ephemeral: true
+      });
+    }
+
+    if (!AMENDES_CHANNEL_ID) {
+      return interaction.reply({
+        content: "❌ Variable Railway manquante : AMENDES_CHANNEL_ID",
+        ephemeral: true
+      });
+    }
+
+    const numero = getNextAmendeNumber();
+    const date = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+    const amende = {
+      numero,
+      entreprise: entreprise.nom,
+      patron: entreprise.patron,
+      montant,
+      motif,
+      date,
+      agent: interaction.user.tag
+    };
+
+    amendes.push(amende);
+    saveData();
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🏛️ ━━━━━━ NOTIFICATION D’AMENDE N°${numero} ━━━━━━`)
+      .setDescription(
+        `🏢 **Entreprise concernée :** ${entreprise.nom}\n` +
+        `👤 **Patron notifié :** ${entreprise.patron}\n` +
+        `💰 **Montant :** ${montant} $\n` +
+        `📄 **Motif :** ${motif}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ _Amende émise dans le cadre du règlement économique RP par la Banque de France._`
+      )
+      .setColor(0xe74c3c)
+      .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
+      .setTimestamp();
+
+    const amendesChannel = await client.channels.fetch(AMENDES_CHANNEL_ID);
+    await amendesChannel.send({
+      content: `${entreprise.patron}`,
+      embeds: [embed]
+    });
+
+    return interaction.reply({
+      content: `✅ Amende N°${numero} envoyée dans le salon dédié.`,
+      ephemeral: true
+    });
+  }
+
+  if (cmd === "amendes-historique") {
+    const nom = interaction.options.getString("entreprise");
+
+    const historique = amendes
+      .filter(a => a.entreprise.toLowerCase() === nom.toLowerCase())
+      .slice(-10)
+      .reverse();
+
+    if (historique.length === 0) {
+      return interaction.reply({
+        content: "📁 Aucune amende enregistrée pour cette entreprise.",
+        ephemeral: true
+      });
+    }
+
+    const description = historique.map(a =>
+      `**N°${a.numero}** — ${a.date}\n` +
+      `💰 ${a.montant} $\n` +
+      `📄 ${a.motif}`
+    ).join("\n\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📁 Historique des amendes — ${nom}`)
+      .setDescription(description)
+      .setColor(0xf1c40f)
+      .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
+      .setTimestamp();
+
+    return interaction.reply({
+      embeds: [embed],
+      ephemeral: true
+    });
   }
 
   if (cmd === "maj") {
