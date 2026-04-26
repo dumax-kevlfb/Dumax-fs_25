@@ -10,9 +10,10 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const AMENDES_CHANNEL_ID = "1498021850054266980";
-const ENTREPRISES_CHANNEL_ID = "1498040049533456556";
-const SERVICES_CHANNEL_ID = "1498047350818738176";
+const AMENDES_CHANNEL_ID = "METS_TON_ID_SALON_AMENDES_ICI";
+const ENTREPRISES_CHANNEL_ID = "METS_TON_ID_SALON_ENTREPRISES_ICI";
+const SERVICES_CHANNEL_ID = "METS_TON_ID_SALON_SERVICES_ICI";
+const PRIMES_CHANNEL_ID = "METS_TON_ID_SALON_PRIMES_ICI";
 
 const STAFF_ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVICE_ROLE_NAME = "━━━━━━━━━━ 🚜 ENTREPRISES AGRICOLES ━━━━━━━━━━";
@@ -21,6 +22,7 @@ const SERVER_NAME = "Dumax FS25";
 const DATA_FILE = "./stats.json";
 const ENTREPRISES_FILE = "./entreprises.json";
 const AMENDES_FILE = "./amendes.json";
+const PRIMES_FILE = "./primes.json";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -33,6 +35,7 @@ let stats = {
 
 let entreprises = [];
 let amendes = [];
+let primes = [];
 
 let panelMessage = null;
 let entreprisesMessage = null;
@@ -53,12 +56,14 @@ function loadData() {
   if (fs.existsSync(DATA_FILE)) stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   if (fs.existsSync(ENTREPRISES_FILE)) entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
   if (fs.existsSync(AMENDES_FILE)) amendes = JSON.parse(fs.readFileSync(AMENDES_FILE, "utf8"));
+  if (fs.existsSync(PRIMES_FILE)) primes = JSON.parse(fs.readFileSync(PRIMES_FILE, "utf8"));
 }
 
 function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
   fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
   fs.writeFileSync(AMENDES_FILE, JSON.stringify(amendes, null, 2));
+  fs.writeFileSync(PRIMES_FILE, JSON.stringify(primes, null, 2));
 }
 
 function getColorByStatus() {
@@ -71,6 +76,15 @@ function getColorByStatus() {
 function getNextAmendeNumber() {
   const max = amendes.reduce((highest, a) => {
     const n = parseInt(a.numero, 10);
+    return Number.isNaN(n) ? highest : Math.max(highest, n);
+  }, 0);
+
+  return String(max + 1).padStart(4, "0");
+}
+
+function getNextPrimeNumber() {
+  const max = primes.reduce((highest, p) => {
+    const n = parseInt(p.numero, 10);
     return Number.isNaN(n) ? highest : Math.max(highest, n);
   }, 0);
 
@@ -410,6 +424,29 @@ const commands = [
     options: [
       { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
     ]
+  },
+  {
+    name: "prime",
+    description: "Attribuer une prime RP à une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true },
+      { name: "montant", description: "Montant de la prime", type: 3, required: true },
+      { name: "motif", description: "Motif de la prime", type: 3, required: true }
+    ]
+  },
+  {
+    name: "primes-historique",
+    description: "Afficher l’historique des primes d’une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
+    ]
+  },
+  {
+    name: "primes-classement",
+    description: "Afficher le classement des entreprises primées",
+    type: 1
   }
 ];
 
@@ -497,17 +534,9 @@ client.on("interactionCreate", async interaction => {
     stats.statut = map[value];
   }
 
-  if (cmd === "fermestotales") {
-    stats.fermesTotales = interaction.options.getString("nombre");
-  }
-
-  if (cmd === "fermesreprises") {
-    stats.fermesReprises = interaction.options.getString("nombre");
-  }
-
-  if (cmd === "mods") {
-    stats.mods = interaction.options.getString("nombre");
-  }
+  if (cmd === "fermestotales") stats.fermesTotales = interaction.options.getString("nombre");
+  if (cmd === "fermesreprises") stats.fermesReprises = interaction.options.getString("nombre");
+  if (cmd === "mods") stats.mods = interaction.options.getString("nombre");
 
   if (cmd === "entreprise-ajouter") {
     const nom = interaction.options.getString("nom");
@@ -548,10 +577,7 @@ client.on("interactionCreate", async interaction => {
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
 
     if (!entreprise) {
-      return interaction.reply({
-        content: "❌ Entreprise introuvable.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
     }
 
     entreprise.recrutement = statut === "open" ? "🟢 Ouvert" : "🔴 Fermé";
@@ -559,10 +585,7 @@ client.on("interactionCreate", async interaction => {
 
   if (cmd === "service" || cmd === "service-forcer") {
     if (cmd === "service-forcer" && !staff) {
-      return interaction.reply({
-        content: "⛔ Seul le staff peut forcer un service.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "⛔ Seul le staff peut forcer un service.", ephemeral: true });
     }
 
     const nom = interaction.options.getString("entreprise");
@@ -570,10 +593,7 @@ client.on("interactionCreate", async interaction => {
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
 
     if (!entreprise) {
-      return interaction.reply({
-        content: "❌ Entreprise introuvable.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
     }
 
     if (cmd === "service" && !staff) {
@@ -618,18 +638,12 @@ client.on("interactionCreate", async interaction => {
     const motif = interaction.options.getString("motif");
 
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
-
-    if (!entreprise) {
-      return interaction.reply({
-        content: "❌ Entreprise introuvable.",
-        ephemeral: true
-      });
-    }
+    if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
 
     const numero = getNextAmendeNumber();
     const date = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
 
-    const amende = {
+    amendes.push({
       numero,
       entreprise: entreprise.nom,
       patron: entreprise.patron,
@@ -638,9 +652,8 @@ client.on("interactionCreate", async interaction => {
       date,
       agent: interaction.user.tag,
       statut: "ACTIVE"
-    };
+    });
 
-    amendes.push(amende);
     saveData();
 
     const embed = new EmbedBuilder()
@@ -670,19 +683,8 @@ client.on("interactionCreate", async interaction => {
     const numero = interaction.options.getString("numero").padStart(4, "0");
     const amende = amendes.find(a => a.numero === numero);
 
-    if (!amende) {
-      return interaction.reply({
-        content: "❌ Amende introuvable.",
-        ephemeral: true
-      });
-    }
-
-    if (amende.statut === "ANNULÉE") {
-      return interaction.reply({
-        content: "⚠️ Cette amende est déjà annulée.",
-        ephemeral: true
-      });
-    }
+    if (!amende) return interaction.reply({ content: "❌ Amende introuvable.", ephemeral: true });
+    if (amende.statut === "ANNULÉE") return interaction.reply({ content: "⚠️ Cette amende est déjà annulée.", ephemeral: true });
 
     amende.statut = "ANNULÉE";
     amende.dateAnnulation = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
@@ -722,10 +724,7 @@ client.on("interactionCreate", async interaction => {
       .reverse();
 
     if (historique.length === 0) {
-      return interaction.reply({
-        content: "📁 Aucune amende enregistrée pour cette entreprise.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
     }
 
     const description = historique.map(a => {
@@ -736,9 +735,7 @@ client.on("interactionCreate", async interaction => {
         `📅 ${a.date}\n` +
         `💰 ${a.montant} $\n` +
         `📄 ${a.motif}` +
-        (a.statut === "ANNULÉE"
-          ? `\n🕒 Annulée le : ${a.dateAnnulation || "Date inconnue"}`
-          : "")
+        (a.statut === "ANNULÉE" ? `\n🕒 Annulée le : ${a.dateAnnulation || "Date inconnue"}` : "")
       );
     }).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
 
@@ -747,6 +744,122 @@ client.on("interactionCreate", async interaction => {
       .setDescription(description)
       .setColor(0xf1c40f)
       .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  if (cmd === "prime") {
+    const nom = interaction.options.getString("entreprise");
+    const montant = interaction.options.getString("montant");
+    const motif = interaction.options.getString("motif");
+
+    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+    if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
+
+    const numero = getNextPrimeNumber();
+    const date = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+    primes.push({
+      numero,
+      entreprise: entreprise.nom,
+      patron: entreprise.patron,
+      montant,
+      motif,
+      date,
+      agent: interaction.user.tag
+    });
+
+    saveData();
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🏛️ ━━━━━━ ATTRIBUTION DE PRIME ${numero} ━━━━━━`)
+      .setDescription(
+        `🏢 **Entreprise concernée :** ${entreprise.nom}\n` +
+        `👤 **Patron notifié :** ${entreprise.patron}\n` +
+        `💰 **Montant :** +${montant} $\n` +
+        `📄 **Motif :** ${motif}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📈 _Prime accordée dans le cadre du soutien économique RP par la Banque de France._`
+      )
+      .setColor(0x2ecc71)
+      .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
+      .setTimestamp();
+
+    const primesChannel = await client.channels.fetch(PRIMES_CHANNEL_ID);
+    await primesChannel.send({ content: `${entreprise.patron}`, embeds: [embed] });
+
+    return interaction.reply({
+      content: `✅ Prime ${numero} envoyée dans le salon dédié.`,
+      ephemeral: true
+    });
+  }
+
+  if (cmd === "primes-historique") {
+    const nom = interaction.options.getString("entreprise");
+
+    const historique = primes
+      .filter(p => p.entreprise.toLowerCase() === nom.toLowerCase())
+      .slice(-10)
+      .reverse();
+
+    if (historique.length === 0) {
+      return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
+    }
+
+    const description = historique.map(p =>
+      `**${p.numero}**\n` +
+      `📅 ${p.date}\n` +
+      `💰 +${p.montant} $\n` +
+      `📄 ${p.motif}`
+    ).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📁 Historique des primes — ${nom}`)
+      .setDescription(description)
+      .setColor(0x2ecc71)
+      .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  if (cmd === "primes-classement") {
+    if (primes.length === 0) {
+      return interaction.reply({ content: "📁 Aucune prime enregistrée pour le moment.", ephemeral: true });
+    }
+
+    const classement = {};
+
+    for (const p of primes) {
+      const montantNum = parseInt(String(p.montant).replace(/\D/g, ""), 10) || 0;
+
+      if (!classement[p.entreprise]) {
+        classement[p.entreprise] = {
+          total: 0,
+          nombre: 0
+        };
+      }
+
+      classement[p.entreprise].total += montantNum;
+      classement[p.entreprise].nombre += 1;
+    }
+
+    const lignes = Object.entries(classement)
+      .sort((a, b) => b[1].total - a[1].total)
+      .slice(0, 10)
+      .map(([entreprise, data], index) =>
+        `**#${index + 1} — ${entreprise}**\n` +
+        `💰 Total : ${data.total} $\n` +
+        `📄 Primes reçues : ${data.nombre}`
+      )
+      .join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏆 ━━━━━━ CLASSEMENT DES PRIMES ━━━━━━")
+      .setDescription(lignes)
+      .setColor(0xf1c40f)
+      .setFooter({ text: "Dumax FS25 • Classement Banque de France" })
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], ephemeral: true });
