@@ -1,20 +1,28 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const { 
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder,
+  SlashCommandBuilder,
+  Routes 
+} = require("discord.js");
+const { REST } = require("@discordjs/rest");
 const fs = require("fs");
 
 const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+
+const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 
 const SERVER_IP = "51.68.65.34";
 const SERVER_PORT = 10000;
 const SERVER_NAME = "Dumax FS25";
+
 const DATA_FILE = "./stats.json";
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
 
 let stats = {
@@ -25,6 +33,7 @@ let stats = {
 
 let statusMessage = null;
 
+// 📁 LOAD / SAVE
 function loadStats() {
   if (fs.existsSync(DATA_FILE)) {
     stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -35,31 +44,21 @@ function saveStats() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
 }
 
+// 🔒 CHECK ROLE
+function hasAccess(member) {
+  return member.roles.cache.some(r => r.name === ROLE_NAME);
+}
+
+// 📊 PANEL
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
     .addFields(
-      {
-        name: "🌐 Adresse",
-        value: `${SERVER_IP}:${SERVER_PORT}`,
-        inline: true
-      },
-      {
-        name: "🏡 Fermes totales",
-        value: stats.fermesTotales,
-        inline: true
-      },
-      {
-        name: "✅ Fermes reprises",
-        value: stats.fermesReprises,
-        inline: true
-      },
-      {
-        name: "🧩 Mods installés",
-        value: stats.mods,
-        inline: true
-      }
+      { name: "🌐 Adresse", value: `${SERVER_IP}:${SERVER_PORT}`, inline: true },
+      { name: "🏡 Fermes totales", value: stats.fermesTotales, inline: true },
+      { name: "✅ Fermes reprises", value: stats.fermesReprises, inline: true },
+      { name: "🧩 Mods installés", value: stats.mods, inline: true }
     )
     .setColor(0x2ecc71)
     .setFooter({ text: "Panel communautaire • Dumax" })
@@ -73,78 +72,106 @@ async function updatePanel() {
 
     if (!statusMessage) {
       statusMessage = await channel.send({ embeds: [embed] });
-      console.log("📩 Panel créé");
       return;
     }
   }
 
   await statusMessage.edit({ embeds: [embed] });
-  console.log("🔄 Panel mis à jour");
 }
 
+// 🚀 COMMANDES SLASH
+const commands = [
+  new SlashCommandBuilder()
+    .setName("fermestotales")
+    .setDescription("Définir le nombre de fermes totales")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("fermesreprises")
+    .setDescription("Définir le nombre de fermes reprises")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("mods")
+    .setDescription("Définir le nombre de mods")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("panel")
+    .setDescription("Mettre à jour le panel")
+].map(command => command.toJSON());
+
+// 📡 REGISTER COMMANDS
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+(async () => {
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log("✅ Slash commands enregistrées");
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+// 🔌 READY
 client.once("ready", async () => {
   console.log(`✅ Connecté : ${client.user.tag}`);
   loadStats();
   await updatePanel();
 });
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+// 🎮 INTERACTIONS
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-  const args = message.content.trim().split(" ");
-  const cmd = args[0].toLowerCase();
-  let updated = false;
-
-  if (cmd === "!fermestotales") {
-    const value = args[1];
-    if (!value) return message.reply("Utilisation : `!fermestotales 12`");
-    stats.fermesTotales = value;
-    updated = true;
+  if (!hasAccess(interaction.member)) {
+    return interaction.reply({
+      content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
+      ephemeral: true
+    });
   }
 
-  if (cmd === "!fermesreprises") {
-    const value = args[1];
-    if (!value) return message.reply("Utilisation : `!fermesreprises 5`");
-    stats.fermesReprises = value;
-    updated = true;
+  const { commandName } = interaction;
+
+  if (commandName === "fermestotales") {
+    stats.fermesTotales = interaction.options.getString("nombre");
   }
 
-  if (cmd === "!mods") {
-    const value = args[1];
-    if (!value) return message.reply("Utilisation : `!mods 42`");
-    stats.mods = value;
-    updated = true;
+  if (commandName === "fermesreprises") {
+    stats.fermesReprises = interaction.options.getString("nombre");
   }
 
-  if (cmd === "!panel") {
+  if (commandName === "mods") {
+    stats.mods = interaction.options.getString("nombre");
+  }
+
+  if (commandName === "panel") {
     await updatePanel();
-    await message.delete().catch(() => {});
-    return;
+    return interaction.reply({ content: "✅ Panel mis à jour", ephemeral: true });
   }
 
-  if (cmd === "!commandes") {
-    const reply = await message.reply(
-      "**Commandes disponibles :**\n" +
-      "`!fermestotales 12`\n" +
-      "`!fermesreprises 5`\n" +
-      "`!mods 42`\n" +
-      "`!panel`"
-    );
+  saveStats();
+  await updatePanel();
 
-    setTimeout(() => reply.delete().catch(() => {}), 8000);
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  if (updated) {
-    saveStats();
-    await updatePanel();
-
-    const confirm = await message.channel.send("✅ Panel mis à jour");
-    setTimeout(() => confirm.delete().catch(() => {}), 3000);
-
-    await message.delete().catch(() => {});
-  }
+  await interaction.reply({
+    content: "✅ Mise à jour effectuée",
+    ephemeral: true
+  });
 });
 
 client.login(TOKEN);
