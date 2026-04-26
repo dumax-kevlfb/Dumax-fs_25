@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
-const XML_URL = process.env.XML_URL;
+const XML_URL = process.env.STATS_XML_URL;
 
 const SERVER_IP = "51.68.65.34";
 const SERVER_PORT = 10000;
