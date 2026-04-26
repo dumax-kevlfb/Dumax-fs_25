@@ -23,7 +23,8 @@ const client = new Client({
 let stats = {
   fermesTotales: "0",
   fermesReprises: "0",
-  mods: "0"
+  mods: "0",
+  statut: "🟠 En développement (staff only)"
 };
 
 let entreprises = [];
@@ -31,16 +32,17 @@ let entreprises = [];
 let panelMessage = null;
 let entreprisesMessage = null;
 
+// 🔒 Vérification rôle
 function hasAccess(member) {
   if (!member || !member.roles) return false;
-  return member.roles.cache.some(role => role.name === ROLE_NAME);
+  return member.roles.cache.some(r => r.name === ROLE_NAME);
 }
 
+// 📁 LOAD / SAVE
 function loadData() {
   if (fs.existsSync(DATA_FILE)) {
     stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   }
-
   if (fs.existsSync(ENTREPRISES_FILE)) {
     entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
   }
@@ -51,16 +53,26 @@ function saveData() {
   fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
 }
 
+// 🎨 Couleur dynamique selon statut
+function getColorByStatus() {
+  if (stats.statut.includes("En ligne")) return 0x2ecc71; // vert
+  if (stats.statut.includes("développement")) return 0xf39c12; // orange
+  if (stats.statut.includes("Hors ligne")) return 0xe74c3c; // rouge
+  return 0x3498db; // fallback
+}
+
+// 📊 PANEL PRINCIPAL
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
     .addFields(
+      { name: "📡 Statut serveur", value: stats.statut, inline: true },
       { name: "🏡 Fermes totales", value: stats.fermesTotales, inline: true },
       { name: "✅ Fermes reprises", value: stats.fermesReprises, inline: true },
       { name: "🧩 Mods installés", value: stats.mods, inline: true }
     )
-    .setColor(0x2ecc71)
+    .setColor(getColorByStatus())
     .setTimestamp();
 
   const channel = await client.channels.fetch(CHANNEL_ID);
@@ -78,6 +90,7 @@ async function updatePanel() {
   await panelMessage.edit({ embeds: [embed] });
 }
 
+// 🏢 PANEL ENTREPRISES
 async function updateEntreprises() {
   const description = entreprises.length === 0
     ? "Aucune entreprise enregistrée."
@@ -104,45 +117,43 @@ async function updateEntreprises() {
   await entreprisesMessage.edit({ embeds: [embed] });
 }
 
+// 🎮 COMMANDES
 const commands = [
+  {
+    name: "statut",
+    description: "Changer le statut du serveur",
+    type: 1,
+    options: [
+      {
+        name: "statut",
+        description: "Choix du statut",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "🟢 En ligne", value: "online" },
+          { name: "🟠 En développement (staff only)", value: "dev" },
+          { name: "🔴 Hors ligne", value: "offline" }
+        ]
+      }
+    ]
+  },
   {
     name: "fermestotales",
     description: "Définir le nombre de fermes totales",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre total de fermes",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre", type: 3, required: true }]
   },
   {
     name: "fermesreprises",
     description: "Définir le nombre de fermes reprises",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre de fermes reprises",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre", type: 3, required: true }]
   },
   {
     name: "mods",
-    description: "Définir le nombre de mods installés",
+    description: "Définir le nombre de mods",
     type: 1,
-    options: [
-      {
-        name: "nombre",
-        description: "Nombre de mods installés",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nombre", description: "Nombre", type: 3, required: true }]
   },
   {
     name: "maj",
@@ -154,150 +165,89 @@ const commands = [
     description: "Ajouter une entreprise",
     type: 1,
     options: [
-      {
-        name: "nom",
-        description: "Nom de l'entreprise",
-        type: 3,
-        required: true
-      },
-      {
-        name: "patron",
-        description: "Patron de l'entreprise",
-        type: 6,
-        required: true
-      }
+      { name: "nom", description: "Nom", type: 3, required: true },
+      { name: "patron", description: "Patron", type: 6, required: true }
     ]
   },
   {
     name: "entreprise-retirer",
     description: "Retirer une entreprise",
     type: 1,
-    options: [
-      {
-        name: "nom",
-        description: "Nom de l'entreprise à retirer",
-        type: 3,
-        required: true
-      }
-    ]
+    options: [{ name: "nom", description: "Nom", type: 3, required: true }]
   }
 ];
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-async function registerCommands() {
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-
-    console.log("✅ Slash commands enregistrées");
-  } catch (error) {
-    console.error("❌ Erreur enregistrement slash commands :", error);
-  }
-}
-
+// 🚀 READY
 client.once("ready", async () => {
-  console.log(`✅ Connecté : ${client.user.tag}`);
-
+  console.log("Bot prêt");
   loadData();
-  await registerCommands();
+
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+
   await updatePanel();
   await updateEntreprises();
 });
 
+// 🎮 INTERACTIONS
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-
   if (!hasAccess(interaction.member)) {
-    return interaction.reply({
-      content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "⛔ Accès refusé", ephemeral: true });
   }
 
   const cmd = interaction.commandName;
 
+  if (cmd === "statut") {
+    const value = interaction.options.getString("statut");
+
+    const map = {
+      online: "🟢 En ligne",
+      dev: "🟠 En développement (staff only)",
+      offline: "🔴 Hors ligne"
+    };
+
+    stats.statut = map[value];
+  }
+
   if (cmd === "fermestotales") {
     stats.fermesTotales = interaction.options.getString("nombre");
-    saveData();
-    await updatePanel();
-    await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Nombre de fermes totales mis à jour.",
-      ephemeral: true
-    });
   }
 
   if (cmd === "fermesreprises") {
     stats.fermesReprises = interaction.options.getString("nombre");
-    saveData();
-    await updatePanel();
-    await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Nombre de fermes reprises mis à jour.",
-      ephemeral: true
-    });
   }
 
   if (cmd === "mods") {
     stats.mods = interaction.options.getString("nombre");
-    saveData();
-    await updatePanel();
-    await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Nombre de mods mis à jour.",
-      ephemeral: true
-    });
   }
 
   if (cmd === "entreprise-ajouter") {
     const nom = interaction.options.getString("nom");
     const patron = interaction.options.getUser("patron");
-
-    entreprises.push({
-      nom,
-      patron: `<@${patron.id}>`
-    });
-
-    saveData();
-    await updatePanel();
-    await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Entreprise ajoutée.",
-      ephemeral: true
-    });
+    entreprises.push({ nom, patron: `<@${patron.id}>` });
   }
 
   if (cmd === "entreprise-retirer") {
     const nom = interaction.options.getString("nom");
-
-    entreprises = entreprises.filter(e => e.nom.toLowerCase() !== nom.toLowerCase());
-
-    saveData();
-    await updatePanel();
-    await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Entreprise retirée.",
-      ephemeral: true
-    });
+    entreprises = entreprises.filter(e => e.nom !== nom);
   }
 
   if (cmd === "maj") {
     await updatePanel();
     await updateEntreprises();
-
-    return interaction.reply({
-      content: "✅ Panels mis à jour.",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "✅ Panels mis à jour", ephemeral: true });
   }
+
+  saveData();
+  await updatePanel();
+  await updateEntreprises();
+
+  interaction.reply({ content: "✅ Mise à jour effectuée", ephemeral: true });
 });
 
 client.login(TOKEN);
