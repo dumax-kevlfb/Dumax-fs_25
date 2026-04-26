@@ -15,11 +15,10 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 
-const SERVER_IP = "51.68.65.34";
-const SERVER_PORT = 10000;
 const SERVER_NAME = "Dumax FS25";
 
 const DATA_FILE = "./stats.json";
+const ENTREPRISES_FILE = "./entreprises.json";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -31,147 +30,177 @@ let stats = {
   mods: "0"
 };
 
-let statusMessage = null;
+let entreprises = [];
 
-// 📁 LOAD / SAVE
-function loadStats() {
-  if (fs.existsSync(DATA_FILE)) {
-    stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-  }
-}
-
-function saveStats() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
-}
+let panelMessage = null;
+let entreprisesMessage = null;
 
 // 🔒 CHECK ROLE
 function hasAccess(member) {
   return member.roles.cache.some(r => r.name === ROLE_NAME);
 }
 
-// 📊 PANEL
+// 📁 LOAD SAVE
+function loadData() {
+  if (fs.existsSync(DATA_FILE)) {
+    stats = JSON.parse(fs.readFileSync(DATA_FILE));
+  }
+  if (fs.existsSync(ENTREPRISES_FILE)) {
+    entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE));
+  }
+}
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2));
+  fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
+}
+
+// 📊 PANEL PRINCIPAL
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
     .addFields(
-      { name: "🌐 Adresse", value: `${SERVER_IP}:${SERVER_PORT}`, inline: true },
       { name: "🏡 Fermes totales", value: stats.fermesTotales, inline: true },
       { name: "✅ Fermes reprises", value: stats.fermesReprises, inline: true },
-      { name: "🧩 Mods installés", value: stats.mods, inline: true }
+      { name: "🧩 Mods", value: stats.mods, inline: true }
     )
-    .setColor(0x2ecc71)
-    .setFooter({ text: "Panel communautaire • Dumax" })
-    .setTimestamp();
+    .setColor(0x2ecc71);
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
-  if (!statusMessage) {
+  if (!panelMessage) {
     const messages = await channel.messages.fetch({ limit: 10 });
-    statusMessage = messages.find(m => m.author.id === client.user.id);
+    panelMessage = messages.find(m => m.author.id === client.user.id);
 
-    if (!statusMessage) {
-      statusMessage = await channel.send({ embeds: [embed] });
+    if (!panelMessage) {
+      panelMessage = await channel.send({ embeds: [embed] });
       return;
     }
   }
 
-  await statusMessage.edit({ embeds: [embed] });
+  await panelMessage.edit({ embeds: [embed] });
 }
 
-// 🚀 COMMANDES SLASH
+// 🏢 PANEL ENTREPRISES
+async function updateEntreprises() {
+  const description = entreprises.length === 0
+    ? "Aucune entreprise enregistrée"
+    : entreprises.map(e => `• **${e.nom}** — ${e.patron}`).join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle("🏢 Entreprises du serveur")
+    .setDescription(description)
+    .setColor(0x3498db);
+
+  const channel = await client.channels.fetch(CHANNEL_ID);
+
+  if (!entreprisesMessage) {
+    const messages = await channel.messages.fetch({ limit: 10 });
+    entreprisesMessage = messages.find(m => m.embeds[0]?.title === "🏢 Entreprises du serveur");
+
+    if (!entreprisesMessage) {
+      entreprisesMessage = await channel.send({ embeds: [embed] });
+      return;
+    }
+  }
+
+  await entreprisesMessage.edit({ embeds: [embed] });
+}
+
+// 🚀 COMMANDES
 const commands = [
   new SlashCommandBuilder()
     .setName("fermestotales")
-    .setDescription("Définir le nombre de fermes totales")
-    .addStringOption(option =>
-      option.setName("nombre")
-        .setDescription("Nombre")
-        .setRequired(true)
-    ),
+    .addStringOption(o => o.setName("nombre").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("fermesreprises")
-    .setDescription("Définir le nombre de fermes reprises")
-    .addStringOption(option =>
-      option.setName("nombre")
-        .setDescription("Nombre")
-        .setRequired(true)
-    ),
+    .addStringOption(o => o.setName("nombre").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("mods")
-    .setDescription("Définir le nombre de mods")
-    .addStringOption(option =>
-      option.setName("nombre")
-        .setDescription("Nombre")
-        .setRequired(true)
-    ),
+    .addStringOption(o => o.setName("nombre").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("maj")
-    .setDescription("Mettre à jour le panel")
-].map(command => command.toJSON());
+    .setName("maj"),
 
-// 📡 REGISTER COMMANDS
+  new SlashCommandBuilder()
+    .setName("entreprise-ajouter")
+    .addStringOption(o => o.setName("nom").setRequired(true))
+    .addUserOption(o => o.setName("patron").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("entreprise-retirer")
+    .addStringOption(o => o.setName("nom").setRequired(true))
+
+].map(cmd => cmd.toJSON());
+
+// REGISTER
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log("✅ Slash commands enregistrées");
-  } catch (error) {
-    console.error(error);
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
 })();
 
-// 🔌 READY
+// READY
 client.once("ready", async () => {
-  console.log(`✅ Connecté : ${client.user.tag}`);
-  loadStats();
+  loadData();
   await updatePanel();
+  await updateEntreprises();
 });
 
-// 🎮 INTERACTIONS
+// INTERACTION
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (!hasAccess(interaction.member)) {
-    return interaction.reply({
-      content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "⛔ Accès refusé", ephemeral: true });
   }
 
-  const { commandName } = interaction;
+  const cmd = interaction.commandName;
 
-  if (commandName === "fermestotales") {
+  if (cmd === "fermestotales") {
     stats.fermesTotales = interaction.options.getString("nombre");
   }
 
-  if (commandName === "fermesreprises") {
+  if (cmd === "fermesreprises") {
     stats.fermesReprises = interaction.options.getString("nombre");
   }
 
-  if (commandName === "mods") {
+  if (cmd === "mods") {
     stats.mods = interaction.options.getString("nombre");
   }
 
-  if (commandName === "maj") {
-    await updatePanel();
-    return interaction.reply({ content: "✅ Panel mis à jour", ephemeral: true });
+  if (cmd === "entreprise-ajouter") {
+    const nom = interaction.options.getString("nom");
+    const patron = interaction.options.getUser("patron");
+
+    entreprises.push({
+      nom,
+      patron: `<@${patron.id}>`
+    });
   }
 
-  saveStats();
-  await updatePanel();
+  if (cmd === "entreprise-retirer") {
+    const nom = interaction.options.getString("nom");
+    entreprises = entreprises.filter(e => e.nom !== nom);
+  }
 
-  await interaction.reply({
-    content: "✅ Mise à jour effectuée",
-    ephemeral: true
-  });
+  if (cmd === "maj") {
+    await updatePanel();
+    await updateEntreprises();
+    return interaction.reply({ content: "✅ Panels mis à jour", ephemeral: true });
+  }
+
+  saveData();
+  await updatePanel();
+  await updateEntreprises();
+
+  interaction.reply({ content: "✅ Mise à jour effectuée", ephemeral: true });
 });
 
 client.login(TOKEN);
