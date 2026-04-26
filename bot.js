@@ -11,7 +11,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
 // Mets ici l’ID du salon amendes
-const AMENDES_CHANNEL_ID = "METS_TON_ID_SALON_AMENDES_ICI";
+const AMENDES_CHANNEL_ID = "1498021850054266980";
 
 const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVER_NAME = "Dumax FS25";
