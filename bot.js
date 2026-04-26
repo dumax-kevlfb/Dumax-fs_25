@@ -10,9 +10,9 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const AMENDES_CHANNEL_ID = "1498021850054266980";
-const ENTREPRISES_CHANNEL_ID = "1498040049533456556";
-const SERVICES_CHANNEL_ID = "1498047350818738176";
+const AMENDES_CHANNEL_ID = "METS_TON_ID_SALON_AMENDES_ICI";
+const ENTREPRISES_CHANNEL_ID = "METS_TON_ID_SALON_ENTREPRISES_ICI";
+const SERVICES_CHANNEL_ID = "METS_TON_ID_SALON_SERVICES_ICI";
 
 const STAFF_ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVICE_ROLE_NAME = "━━━━━━━━━━ 🚜 ENTREPRISES AGRICOLES ━━━━━━━━━━";
@@ -37,6 +37,7 @@ let amendes = [];
 let panelMessage = null;
 let entreprisesMessage = null;
 let servicesMessage = null;
+let serviceAlertIntervalStarted = false;
 
 function isStaff(member) {
   if (!member || !member.roles) return false;
@@ -142,6 +143,7 @@ async function updateEntreprises() {
         `🏛️ **${e.nom}**\n\n` +
         `🌾 **Secteur :** ${e.secteur || "Non défini"}\n` +
         `👤 **Patron :** ${e.patron}\n` +
+        `🏷️ **Rôle :** ${e.roleId ? `<@&${e.roleId}>` : "Non défini"}\n` +
         `📥 **Recrutement :** ${e.recrutement || "🟢 Ouvert"}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━`
       ).join("\n\n");
@@ -167,30 +169,36 @@ async function updateServices() {
   const enService = entreprises.filter(e => e.service === "🟢 En service");
   const horsService = entreprises.filter(e => e.service !== "🟢 En service");
 
+  const blocEnService = enService.length
+    ? enService.map(e => `${e.nom}`).join("\n")
+    : "_Aucune entreprise en service_";
+
+  const blocHorsService = horsService.length
+    ? horsService.map(e => `${e.nom}`).join("\n")
+    : "_Aucune entreprise hors service_";
+
   const description =
-    `📋 **Tableau opérationnel des sociétés agricoles**\n\n` +
-    `🟢 En service : **${enService.length}**\n` +
-    `🔴 Hors service : **${horsService.length}**\n\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `🚜 **Tableau de service des entreprises**\n\n` +
+
     `🟢 **EN SERVICE**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
-    (enService.length
-      ? enService.map(e => `🟢 ${e.nom}`).join("\n")
-      : "_Aucune entreprise en service_"
-    ) +
-    `\n\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `${blocEnService}\n\n` +
+
     `🔴 **HORS SERVICE**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
-    (horsService.length
-      ? horsService.map(e => `🔴 ${e.nom}`).join("\n")
-      : "_Aucune entreprise hors service_"
-    );
+    `${blocHorsService}\n\n` +
+
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `📘 **UTILISATION**\n` +
+    `• \`/service\` → Prendre ou quitter le service\n` +
+    `• Les membres du staff peuvent retirer un service si nécessaire\n\n` +
+    `📌 _Pensez à quitter le service en fin de session._`;
 
   const embed = new EmbedBuilder()
     .setTitle("🚜 ━━━━━━━━━━ SERVICES ENTREPRISES ━━━━━━━━━━")
     .setDescription(description)
     .setColor(enService.length > 0 ? 0x2ecc71 : 0xe74c3c)
-    .setFooter({ text: "Dumax FS25 • Tableau des services" })
+    .setFooter({ text: "Dumax FS25 • Tableau opérationnel" })
     .setTimestamp();
 
   const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
@@ -205,6 +213,55 @@ async function updateServices() {
   }
 
   await servicesMessage.edit({ embeds: [embed] });
+}
+
+async function getServiceRoleMention(guild) {
+  await guild.roles.fetch();
+  const role = guild.roles.cache.find(r => r.name === SERVICE_ROLE_NAME);
+  return role ? `<@&${role.id}>` : "";
+}
+
+function startServiceAlertLoop() {
+  if (serviceAlertIntervalStarted) return;
+  serviceAlertIntervalStarted = true;
+
+  setInterval(async () => {
+    const now = Date.now();
+    let updated = false;
+
+    for (const e of entreprises) {
+      if (
+        e.service === "🟢 En service" &&
+        e.serviceStart &&
+        !e.alertSent &&
+        now - e.serviceStart >= 60 * 60 * 1000
+      ) {
+        const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
+        const mention = await getServiceRoleMention(channel.guild);
+
+        const embed = new EmbedBuilder()
+          .setTitle("⏱️ Vérification de service")
+          .setDescription(
+            `🚜 **${e.nom}** est en service depuis plus d’1 heure.\n\n` +
+            `📌 Merci de vérifier que le service est toujours actif.\n` +
+            `_Pensez à quitter le service si nécessaire._`
+          )
+          .setColor(0xf1c40f)
+          .setFooter({ text: "Dumax FS25 • Vérification automatique" })
+          .setTimestamp();
+
+        await channel.send({
+          content: mention,
+          embeds: [embed]
+        });
+
+        e.alertSent = true;
+        updated = true;
+      }
+    }
+
+    if (updated) saveData();
+  }, 5 * 60 * 1000);
 }
 
 const commands = [
@@ -255,6 +312,7 @@ const commands = [
       { name: "nom", description: "Nom de l’entreprise", type: 3, required: true },
       { name: "secteur", description: "Secteur d’activité", type: 3, required: true },
       { name: "patron", description: "Patron de l’entreprise", type: 6, required: true },
+      { name: "role", description: "Rôle Discord lié à l’entreprise", type: 8, required: true },
       {
         name: "recrutement",
         description: "Statut du recrutement",
@@ -376,7 +434,10 @@ client.once("ready", async () => {
 
   entreprises = entreprises.map(e => ({
     ...e,
-    service: e.service || "🔴 Hors service"
+    service: e.service || "🔴 Hors service",
+    serviceStart: e.serviceStart || null,
+    alertSent: e.alertSent || false,
+    roleId: e.roleId || null
   }));
 
   saveData();
@@ -385,6 +446,8 @@ client.once("ready", async () => {
   await updatePanel();
   await updateEntreprises();
   await updateServices();
+
+  startServiceAlertLoop();
 });
 
 client.on("interactionCreate", async interaction => {
@@ -450,6 +513,7 @@ client.on("interactionCreate", async interaction => {
     const nom = interaction.options.getString("nom");
     const secteur = interaction.options.getString("secteur");
     const patron = interaction.options.getUser("patron");
+    const role = interaction.options.getRole("role");
     const recrutement = interaction.options.getString("recrutement");
 
     const existe = entreprises.some(e => e.nom.toLowerCase() === nom.toLowerCase());
@@ -465,8 +529,11 @@ client.on("interactionCreate", async interaction => {
       nom,
       secteur,
       patron: `<@${patron.id}>`,
+      roleId: role.id,
       recrutement: recrutement === "open" ? "🟢 Ouvert" : "🔴 Fermé",
-      service: "🔴 Hors service"
+      service: "🔴 Hors service",
+      serviceStart: null,
+      alertSent: false
     });
   }
 
@@ -509,7 +576,31 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    entreprise.service = statut === "on" ? "🟢 En service" : "🔴 Hors service";
+    if (cmd === "service" && !staff) {
+      if (!entreprise.roleId) {
+        return interaction.reply({
+          content: "⛔ Aucun rôle Discord n’est lié à cette entreprise. Contacte le staff.",
+          ephemeral: true
+        });
+      }
+
+      if (!interaction.member.roles.cache.has(entreprise.roleId)) {
+        return interaction.reply({
+          content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
+          ephemeral: true
+        });
+      }
+    }
+
+    if (statut === "on") {
+      entreprise.service = "🟢 En service";
+      entreprise.serviceStart = Date.now();
+      entreprise.alertSent = false;
+    } else {
+      entreprise.service = "🔴 Hors service";
+      entreprise.serviceStart = null;
+      entreprise.alertSent = false;
+    }
 
     saveData();
     await updateServices();
