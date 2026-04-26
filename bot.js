@@ -10,7 +10,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// Mets ici l’ID du salon amendes
 const AMENDES_CHANNEL_ID = "1498021850054266980";
 
 const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
@@ -70,6 +69,7 @@ function getNextAmendeNumber() {
 
 async function fetchPanelMessage(channel, titlePart) {
   const messages = await channel.messages.fetch({ limit: 30 });
+
   return messages.find(m =>
     m.author.id === client.user.id &&
     m.embeds[0]?.title?.includes(titlePart)
@@ -110,22 +110,44 @@ async function updatePanel() {
 }
 
 async function updateEntreprises() {
-  const description = entreprises.length === 0
-    ? "```Aucune entreprise enregistrée.```"
-    : entreprises.map(e =>
-      `🏢 **${e.nom}**\n` +
-      `👤 Patron : ${e.patron}\n` +
-      `📥 Recrutement : ${e.recrutement || "🟢 Ouvert"}`
-    ).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
-
   const embed = new EmbedBuilder()
     .setTitle("🏢 ━━━━━━━━━━ ENTREPRISES ━━━━━━━━━━")
     .setDescription(
-      `📋 **Registre officiel des entreprises reprises**\n\n${description}`
+      `📋 **Registre officiel des entreprises reprises**\n\n` +
+      `🏢 Entreprises enregistrées : **${entreprises.length}**\n` +
+      `📥 Recrutements ouverts : **${entreprises.filter(e => (e.recrutement || "").includes("Ouvert")).length}**\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━`
     )
     .setColor(0x3498db)
     .setFooter({ text: "Dumax FS25 • Registre des entreprises" })
     .setTimestamp();
+
+  if (entreprises.length === 0) {
+    embed.addFields({
+      name: "📭 Aucune entreprise enregistrée",
+      value: "```Le registre est actuellement vide.```",
+      inline: false
+    });
+  } else {
+    entreprises.forEach((e, index) => {
+      embed.addFields({
+        name: `🏛️ ${e.nom}`,
+        value:
+          `🌾 **Secteur :** ${e.secteur || "Non défini"}\n` +
+          `👤 **Patron :** ${e.patron}\n` +
+          `📥 **Recrutement :** ${e.recrutement || "🟢 Ouvert"}`,
+        inline: true
+      });
+
+      if ((index + 1) % 3 === 0 && index + 1 < entreprises.length) {
+        embed.addFields({
+          name: "━━━━━━━━━━━━━━━━━━━━",
+          value: "‎",
+          inline: false
+        });
+      }
+    });
+  }
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
@@ -187,6 +209,7 @@ const commands = [
     type: 1,
     options: [
       { name: "nom", description: "Nom de l’entreprise", type: 3, required: true },
+      { name: "secteur", description: "Secteur d’activité", type: 3, required: true },
       { name: "patron", description: "Patron de l’entreprise", type: 6, required: true },
       {
         name: "recrutement",
@@ -304,6 +327,7 @@ client.on("interactionCreate", async interaction => {
 
   if (cmd === "statut") {
     const value = interaction.options.getString("statut");
+
     const map = {
       online: "🟢 En ligne",
       dev: "🟠 En développement (staff only)",
@@ -327,6 +351,7 @@ client.on("interactionCreate", async interaction => {
 
   if (cmd === "entreprise-ajouter") {
     const nom = interaction.options.getString("nom");
+    const secteur = interaction.options.getString("secteur");
     const patron = interaction.options.getUser("patron");
     const recrutement = interaction.options.getString("recrutement");
 
@@ -341,6 +366,7 @@ client.on("interactionCreate", async interaction => {
 
     entreprises.push({
       nom,
+      secteur,
       patron: `<@${patron.id}>`,
       recrutement: recrutement === "open" ? "🟢 Ouvert" : "🔴 Fermé"
     });
