@@ -117,7 +117,11 @@ async function updatePanel() {
 async function updateEntreprises() {
   const description = entreprises.length === 0
     ? "```Aucune entreprise enregistrée.```"
-    : entreprises.map(e => `🏢 **${e.nom}**\n👤 Patron : ${e.patron}`).join("\n\n");
+    : entreprises.map(e =>
+      `🏢 **${e.nom}**\n` +
+      `👤 Patron : ${e.patron}\n` +
+      `📥 Recrutement : ${e.recrutement || "🟢 Ouvert"}`
+    ).join("\n\n");
 
   const embed = new EmbedBuilder()
     .setTitle("🏢 ━━━━━━━━━━ ENTREPRISES ━━━━━━━━━━")
@@ -224,6 +228,16 @@ const commands = [
         description: "Patron de l’entreprise",
         type: 6,
         required: true
+      },
+      {
+        name: "recrutement",
+        description: "Statut du recrutement",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "🟢 Ouvert", value: "open" },
+          { name: "🔴 Fermé", value: "closed" }
+        ]
       }
     ]
   },
@@ -233,10 +247,35 @@ const commands = [
     type: 1,
     options: [
       {
-        name: "nom",
-        description: "Nom de l’entreprise",
+        name: "entreprise",
+        description: "Entreprise à retirer",
         type: 3,
-        required: true
+        required: true,
+        autocomplete: true
+      }
+    ]
+  },
+  {
+    name: "recrutement",
+    description: "Modifier le recrutement d’une entreprise",
+    type: 1,
+    options: [
+      {
+        name: "entreprise",
+        description: "Entreprise concernée",
+        type: 3,
+        required: true,
+        autocomplete: true
+      },
+      {
+        name: "statut",
+        description: "Statut du recrutement",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "🟢 Ouvert", value: "open" },
+          { name: "🔴 Fermé", value: "closed" }
+        ]
       }
     ]
   }
@@ -267,6 +306,20 @@ client.once("ready", async () => {
 });
 
 client.on("interactionCreate", async interaction => {
+  if (interaction.isAutocomplete()) {
+    const focusedValue = interaction.options.getFocused().toLowerCase();
+
+    const choices = entreprises
+      .filter(e => e.nom.toLowerCase().includes(focusedValue))
+      .slice(0, 25)
+      .map(e => ({
+        name: e.nom,
+        value: e.nom
+      }));
+
+    return interaction.respond(choices);
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   if (!hasAccess(interaction.member)) {
@@ -305,16 +358,43 @@ client.on("interactionCreate", async interaction => {
   if (cmd === "entreprise-ajouter") {
     const nom = interaction.options.getString("nom");
     const patron = interaction.options.getUser("patron");
+    const recrutement = interaction.options.getString("recrutement");
+
+    const existe = entreprises.some(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+    if (existe) {
+      return interaction.reply({
+        content: "❌ Cette entreprise existe déjà.",
+        ephemeral: true
+      });
+    }
 
     entreprises.push({
       nom,
-      patron: `<@${patron.id}>`
+      patron: `<@${patron.id}>`,
+      recrutement: recrutement === "open" ? "🟢 Ouvert" : "🔴 Fermé"
     });
   }
 
   if (cmd === "entreprise-retirer") {
-    const nom = interaction.options.getString("nom");
+    const nom = interaction.options.getString("entreprise");
     entreprises = entreprises.filter(e => e.nom.toLowerCase() !== nom.toLowerCase());
+  }
+
+  if (cmd === "recrutement") {
+    const nom = interaction.options.getString("entreprise");
+    const statut = interaction.options.getString("statut");
+
+    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+    if (!entreprise) {
+      return interaction.reply({
+        content: "❌ Entreprise introuvable.",
+        ephemeral: true
+      });
+    }
+
+    entreprise.recrutement = statut === "open" ? "🟢 Ouvert" : "🔴 Fermé";
   }
 
   if (cmd === "maj") {
