@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-const net = require("net");
 
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -18,44 +17,18 @@ const client = new Client({
 
 let statusMessage = null;
 
-function checkServer() {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(3000);
-
-    socket.connect(SERVER_PORT, SERVER_IP, () => {
-      socket.destroy();
-      resolve(true);
-    });
-
-    socket.on("error", () => resolve(false));
-
-    socket.on("timeout", () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
-}
-
 async function updatePanel() {
-  const online = await checkServer();
-
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
     .addFields(
-      {
-        name: "🚜 Statut",
-        value: online ? "🟢 En ligne" : "🔴 Hors ligne",
-        inline: true
-      },
       {
         name: "🌐 Adresse",
         value: `${SERVER_IP}:${SERVER_PORT}`,
         inline: true
       }
     )
-    .setColor(online ? 0x2ecc71 : 0xe74c3c)
+    .setColor(0x3498db) // couleur neutre (bleu)
     .setFooter({
       text: "Actualisation toutes les 30 secondes • Créé et géré par Dumax"
     })
@@ -84,8 +57,12 @@ client.once("ready", async () => {
   await updatePanel();
 
   setInterval(async () => {
-    console.log("⏱️ Actualisation lancée");
-    await updatePanel();
+    try {
+      console.log("⏱️ Actualisation lancée");
+      await updatePanel();
+    } catch (error) {
+      console.error("Erreur updatePanel :", error);
+    }
   }, 30000);
 });
 
