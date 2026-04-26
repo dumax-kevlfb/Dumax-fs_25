@@ -109,7 +109,7 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName("panel")
+    .setName("maj")
     .setDescription("Mettre à jour le panel")
 ].map(command => command.toJSON());
 
@@ -160,7 +160,7 @@ client.on("interactionCreate", async interaction => {
     stats.mods = interaction.options.getString("nombre");
   }
 
-  if (commandName === "panel") {
+  if (commandName === "maj") {
     await updatePanel();
     return interaction.reply({ content: "✅ Panel mis à jour", ephemeral: true });
   }
