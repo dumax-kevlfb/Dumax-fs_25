@@ -9,7 +9,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
-const AMENDES_CHANNEL_ID = process.env.AMENDES_CHANNEL_ID;
+const AMENDES_CHANNEL_ID = "1498021850054266980"
 
 const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVER_NAME = "Dumax FS25";
