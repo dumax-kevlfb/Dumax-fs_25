@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const XML_URL = process.env.XML_URL;
 
 const SERVER_IP = "51.68.65.34";
 const SERVER_PORT = 10000;
@@ -17,7 +18,34 @@ const client = new Client({
 
 let statusMessage = null;
 
+async function getPlayerCount() {
+  try {
+    const response = await fetch(XML_URL);
+    const xml = await response.text();
+
+    const currentMatch =
+      xml.match(/numPlayers="(\d+)"/) ||
+      xml.match(/players="(\d+)"/) ||
+      xml.match(/currentPlayers="(\d+)"/);
+
+    const maxMatch =
+      xml.match(/capacity="(\d+)"/) ||
+      xml.match(/maxPlayers="(\d+)"/) ||
+      xml.match(/slots="(\d+)"/);
+
+    const currentPlayers = currentMatch ? currentMatch[1] : "?";
+    const maxPlayers = maxMatch ? maxMatch[1] : "?";
+
+    return `${currentPlayers} / ${maxPlayers}`;
+  } catch (error) {
+    console.error("Erreur lecture XML :", error);
+    return "Indisponible";
+  }
+}
+
 async function updatePanel() {
+  const players = await getPlayerCount();
+
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
@@ -26,9 +54,14 @@ async function updatePanel() {
         name: "🌐 Adresse",
         value: `${SERVER_IP}:${SERVER_PORT}`,
         inline: true
+      },
+      {
+        name: "👥 Joueurs connectés",
+        value: players,
+        inline: true
       }
     )
-    .setColor(0x3498db) // couleur neutre (bleu)
+    .setColor(0x3498db)
     .setFooter({
       text: "Actualisation toutes les 30 secondes • Créé et géré par Dumax"
     })
