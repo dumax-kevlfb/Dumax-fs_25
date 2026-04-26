@@ -65,7 +65,8 @@ async function updatePanel() {
       { name: "✅ Fermes reprises", value: stats.fermesReprises, inline: true },
       { name: "🧩 Mods", value: stats.mods, inline: true }
     )
-    .setColor(0x2ecc71);
+    .setColor(0x2ecc71)
+    .setTimestamp();
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
@@ -91,7 +92,8 @@ async function updateEntreprises() {
   const embed = new EmbedBuilder()
     .setTitle("🏢 Entreprises du serveur")
     .setDescription(description)
-    .setColor(0x3498db);
+    .setColor(0x3498db)
+    .setTimestamp();
 
   const channel = await client.channels.fetch(CHANNEL_ID);
 
@@ -108,57 +110,96 @@ async function updateEntreprises() {
   await entreprisesMessage.edit({ embeds: [embed] });
 }
 
-// 🚀 COMMANDES
+// 🚀 COMMANDES SLASH (CORRIGÉES)
 const commands = [
   new SlashCommandBuilder()
     .setName("fermestotales")
-    .addStringOption(o => o.setName("nombre").setRequired(true)),
+    .setDescription("Définir le nombre de fermes totales")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre total de fermes")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("fermesreprises")
-    .addStringOption(o => o.setName("nombre").setRequired(true)),
+    .setDescription("Définir le nombre de fermes reprises")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre de fermes reprises")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("mods")
-    .addStringOption(o => o.setName("nombre").setRequired(true)),
+    .setDescription("Définir le nombre de mods")
+    .addStringOption(option =>
+      option.setName("nombre")
+        .setDescription("Nombre de mods installés")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
-    .setName("maj"),
+    .setName("maj")
+    .setDescription("Mettre à jour les panels"),
 
   new SlashCommandBuilder()
     .setName("entreprise-ajouter")
-    .addStringOption(o => o.setName("nom").setRequired(true))
-    .addUserOption(o => o.setName("patron").setRequired(true)),
+    .setDescription("Ajouter une entreprise")
+    .addStringOption(option =>
+      option.setName("nom")
+        .setDescription("Nom de l’entreprise")
+        .setRequired(true)
+    )
+    .addUserOption(option =>
+      option.setName("patron")
+        .setDescription("Patron de l’entreprise")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("entreprise-retirer")
-    .addStringOption(o => o.setName("nom").setRequired(true))
+    .setDescription("Retirer une entreprise")
+    .addStringOption(option =>
+      option.setName("nom")
+        .setDescription("Nom de l’entreprise à retirer")
+        .setRequired(true)
+    )
 
 ].map(cmd => cmd.toJSON());
 
-// REGISTER
+// 📡 REGISTER COMMANDS
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log("✅ Slash commands enregistrées");
+  } catch (error) {
+    console.error(error);
+  }
 })();
 
-// READY
+// 🔌 READY
 client.once("ready", async () => {
+  console.log(`✅ Connecté : ${client.user.tag}`);
   loadData();
   await updatePanel();
   await updateEntreprises();
 });
 
-// INTERACTION
+// 🎮 INTERACTIONS
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (!hasAccess(interaction.member)) {
-    return interaction.reply({ content: "⛔ Accès refusé", ephemeral: true });
+    return interaction.reply({
+      content: "⛔ Tu n’as pas la permission",
+      ephemeral: true
+    });
   }
 
   const cmd = interaction.commandName;
@@ -200,7 +241,10 @@ client.on("interactionCreate", async interaction => {
   await updatePanel();
   await updateEntreprises();
 
-  interaction.reply({ content: "✅ Mise à jour effectuée", ephemeral: true });
+  await interaction.reply({
+    content: "✅ Mise à jour effectuée",
+    ephemeral: true
+  });
 });
 
 client.login(TOKEN);
