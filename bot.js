@@ -10,10 +10,12 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const AMENDES_CHANNEL_ID = "1498021850054266980";
-const ENTREPRISES_CHANNEL_ID = "1498040049533456556";
+const AMENDES_CHANNEL_ID = "METS_TON_ID_SALON_AMENDES_ICI";
+const ENTREPRISES_CHANNEL_ID = "METS_TON_ID_SALON_ENTREPRISES_ICI";
+const SERVICES_CHANNEL_ID = "METS_TON_ID_SALON_SERVICES_ICI";
 
-const ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
+const STAFF_ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
+const SERVICE_ROLE_NAME = "━━━━━━━━━━ 🚜 ENTREPRISES AGRICOLES ━━━━━━━━━━";
 const SERVER_NAME = "Dumax FS25";
 
 const DATA_FILE = "./stats.json";
@@ -34,10 +36,16 @@ let amendes = [];
 
 let panelMessage = null;
 let entreprisesMessage = null;
+let servicesMessage = null;
 
-function hasAccess(member) {
+function isStaff(member) {
   if (!member || !member.roles) return false;
-  return member.roles.cache.some(r => r.name === ROLE_NAME);
+  return member.roles.cache.some(r => r.name === STAFF_ROLE_NAME);
+}
+
+function isServiceAllowed(member) {
+  if (!member || !member.roles) return false;
+  return member.roles.cache.some(r => r.name === SERVICE_ROLE_NAME);
 }
 
 function loadData() {
@@ -155,6 +163,50 @@ async function updateEntreprises() {
   await entreprisesMessage.edit({ embeds: [embed] });
 }
 
+async function updateServices() {
+  const enService = entreprises.filter(e => e.service === "🟢 En service");
+  const horsService = entreprises.filter(e => e.service !== "🟢 En service");
+
+  const description =
+    `📋 **Tableau opérationnel des sociétés agricoles**\n\n` +
+    `🟢 En service : **${enService.length}**\n` +
+    `🔴 Hors service : **${horsService.length}**\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `🟢 **EN SERVICE**\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    (enService.length
+      ? enService.map(e => `🟢 ${e.nom}`).join("\n")
+      : "_Aucune entreprise en service_"
+    ) +
+    `\n\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `🔴 **HORS SERVICE**\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    (horsService.length
+      ? horsService.map(e => `🔴 ${e.nom}`).join("\n")
+      : "_Aucune entreprise hors service_"
+    );
+
+  const embed = new EmbedBuilder()
+    .setTitle("🚜 ━━━━━━━━━━ SERVICES ENTREPRISES ━━━━━━━━━━")
+    .setDescription(description)
+    .setColor(enService.length > 0 ? 0x2ecc71 : 0xe74c3c)
+    .setFooter({ text: "Dumax FS25 • Tableau des services" })
+    .setTimestamp();
+
+  const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
+
+  if (!servicesMessage) {
+    servicesMessage = await fetchPanelMessage(channel, "SERVICES ENTREPRISES");
+
+    if (!servicesMessage) {
+      servicesMessage = await channel.send({ embeds: [embed] });
+      return;
+    }
+  }
+
+  await servicesMessage.edit({ embeds: [embed] });
+}
+
 const commands = [
   {
     name: "statut",
@@ -240,6 +292,42 @@ const commands = [
     ]
   },
   {
+    name: "service",
+    description: "Prendre ou quitter le service d’une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true },
+      {
+        name: "statut",
+        description: "Statut de service",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "🟢 En service", value: "on" },
+          { name: "🔴 Hors service", value: "off" }
+        ]
+      }
+    ]
+  },
+  {
+    name: "service-forcer",
+    description: "Forcer le statut de service d’une entreprise",
+    type: 1,
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true },
+      {
+        name: "statut",
+        description: "Statut de service",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "🟢 En service", value: "on" },
+          { name: "🔴 Hors service", value: "off" }
+        ]
+      }
+    ]
+  },
+  {
     name: "amende",
     description: "Émettre une amende RP à une entreprise",
     type: 1,
@@ -275,7 +363,6 @@ async function registerCommands() {
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
-
     console.log("✅ Slash commands enregistrées");
   } catch (error) {
     console.error("❌ Erreur enregistrement slash commands :", error);
@@ -286,9 +373,18 @@ client.once("ready", async () => {
   console.log(`✅ Connecté : ${client.user.tag}`);
 
   loadData();
+
+  entreprises = entreprises.map(e => ({
+    ...e,
+    service: e.service || "🔴 Hors service"
+  }));
+
+  saveData();
+
   await registerCommands();
   await updatePanel();
   await updateEntreprises();
+  await updateServices();
 });
 
 client.on("interactionCreate", async interaction => {
@@ -308,14 +404,25 @@ client.on("interactionCreate", async interaction => {
 
   if (!interaction.isChatInputCommand()) return;
 
-  if (!hasAccess(interaction.member)) {
-    return interaction.reply({
-      content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
-      ephemeral: true
-    });
-  }
-
   const cmd = interaction.commandName;
+  const staff = isStaff(interaction.member);
+  const serviceAllowed = isServiceAllowed(interaction.member);
+
+  if (cmd === "service") {
+    if (!staff && !serviceAllowed) {
+      return interaction.reply({
+        content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
+        ephemeral: true
+      });
+    }
+  } else {
+    if (!staff) {
+      return interaction.reply({
+        content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
+        ephemeral: true
+      });
+    }
+  }
 
   if (cmd === "statut") {
     const value = interaction.options.getString("statut");
@@ -358,7 +465,8 @@ client.on("interactionCreate", async interaction => {
       nom,
       secteur,
       patron: `<@${patron.id}>`,
-      recrutement: recrutement === "open" ? "🟢 Ouvert" : "🔴 Fermé"
+      recrutement: recrutement === "open" ? "🟢 Ouvert" : "🔴 Fermé",
+      service: "🔴 Hors service"
     });
   }
 
@@ -370,7 +478,6 @@ client.on("interactionCreate", async interaction => {
   if (cmd === "recrutement") {
     const nom = interaction.options.getString("entreprise");
     const statut = interaction.options.getString("statut");
-
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
 
     if (!entreprise) {
@@ -381,6 +488,37 @@ client.on("interactionCreate", async interaction => {
     }
 
     entreprise.recrutement = statut === "open" ? "🟢 Ouvert" : "🔴 Fermé";
+  }
+
+  if (cmd === "service" || cmd === "service-forcer") {
+    if (cmd === "service-forcer" && !staff) {
+      return interaction.reply({
+        content: "⛔ Seul le staff peut forcer un service.",
+        ephemeral: true
+      });
+    }
+
+    const nom = interaction.options.getString("entreprise");
+    const statut = interaction.options.getString("statut");
+    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+    if (!entreprise) {
+      return interaction.reply({
+        content: "❌ Entreprise introuvable.",
+        ephemeral: true
+      });
+    }
+
+    entreprise.service = statut === "on" ? "🟢 En service" : "🔴 Hors service";
+
+    saveData();
+    await updateServices();
+    await updateEntreprises();
+
+    return interaction.reply({
+      content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
+      ephemeral: true
+    });
   }
 
   if (cmd === "amende") {
@@ -429,10 +567,7 @@ client.on("interactionCreate", async interaction => {
       .setTimestamp();
 
     const amendesChannel = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await amendesChannel.send({
-      content: `${entreprise.patron}`,
-      embeds: [embed]
-    });
+    await amendesChannel.send({ content: `${entreprise.patron}`, embeds: [embed] });
 
     return interaction.reply({
       content: `✅ Amende ${numero} envoyée dans le salon dédié.`,
@@ -479,10 +614,7 @@ client.on("interactionCreate", async interaction => {
       .setTimestamp();
 
     const amendesChannel = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await amendesChannel.send({
-      content: `${amende.patron}`,
-      embeds: [embed]
-    });
+    await amendesChannel.send({ content: `${amende.patron}`, embeds: [embed] });
 
     return interaction.reply({
       content: `✅ Amende ${numero} annulée.`,
@@ -526,15 +658,13 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
       .setTimestamp();
 
-    return interaction.reply({
-      embeds: [embed],
-      ephemeral: true
-    });
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
   if (cmd === "maj") {
     await updatePanel();
     await updateEntreprises();
+    await updateServices();
 
     return interaction.reply({
       content: "✅ Panels mis à jour.",
@@ -545,6 +675,7 @@ client.on("interactionCreate", async interaction => {
   saveData();
   await updatePanel();
   await updateEntreprises();
+  await updateServices();
 
   return interaction.reply({
     content: "✅ Mise à jour effectuée.",
