@@ -8,6 +8,10 @@ const {
 const { REST } = require("@discordjs/rest");
 const fs = require("fs");
 
+// 🔥 Anti crash
+process.on("unhandledRejection", console.error);
+process.on("uncaughtException", console.error);
+
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -35,12 +39,13 @@ let entreprises = [];
 let panelMessage = null;
 let entreprisesMessage = null;
 
-// 🔒 CHECK ROLE
+// 🔒 Vérification rôle sécurisée
 function hasAccess(member) {
+  if (!member || !member.roles) return false;
   return member.roles.cache.some(r => r.name === ROLE_NAME);
 }
 
-// 📁 LOAD SAVE
+// 📁 LOAD / SAVE
 function loadData() {
   if (fs.existsSync(DATA_FILE)) {
     stats = JSON.parse(fs.readFileSync(DATA_FILE));
@@ -110,7 +115,7 @@ async function updateEntreprises() {
   await entreprisesMessage.edit({ embeds: [embed] });
 }
 
-// 🚀 COMMANDES SLASH (CORRIGÉES)
+// 🚀 COMMANDES SLASH
 const commands = [
   new SlashCommandBuilder()
     .setName("fermestotales")
@@ -162,7 +167,7 @@ const commands = [
     .setDescription("Retirer une entreprise")
     .addStringOption(option =>
       option.setName("nom")
-        .setDescription("Nom de l’entreprise à retirer")
+        .setDescription("Nom de l’entreprise")
         .setRequired(true)
     )
 
@@ -195,7 +200,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (!hasAccess(interaction.member)) {
+  if (!interaction.member || !hasAccess(interaction.member)) {
     return interaction.reply({
       content: "⛔ Tu n’as pas la permission",
       ephemeral: true
