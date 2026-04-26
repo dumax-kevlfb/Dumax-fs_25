@@ -18,11 +18,8 @@ const client = new Client({
 });
 
 let stats = {
-  joueurs: "0 / 6",
-  meteo: "Inconnue",
-  heure: "Inconnue",
-  saison: "Inconnue",
-  fermes: "0",
+  fermesTotales: "0",
+  fermesReprises: "0",
   mods: "0"
 };
 
@@ -43,13 +40,26 @@ async function updatePanel() {
     .setTitle("📊 Panel de serveur")
     .setDescription(`Serveur : **${SERVER_NAME}**`)
     .addFields(
-      { name: "🌐 Adresse", value: `${SERVER_IP}:${SERVER_PORT}`, inline: true },
-      { name: "👥 Joueurs connectés", value: stats.joueurs, inline: true },
-      { name: "🕒 Heure serveur", value: stats.heure, inline: true },
-      { name: "🌤️ Météo", value: stats.meteo, inline: true },
-      { name: "🍂 Saison", value: stats.saison, inline: true },
-      { name: "🏡 Fermes", value: stats.fermes, inline: true },
-      { name: "🧩 Mods", value: stats.mods, inline: true }
+      {
+        name: "🌐 Adresse",
+        value: `${SERVER_IP}:${SERVER_PORT}`,
+        inline: true
+      },
+      {
+        name: "🏡 Fermes totales",
+        value: stats.fermesTotales,
+        inline: true
+      },
+      {
+        name: "✅ Fermes reprises",
+        value: stats.fermesReprises,
+        inline: true
+      },
+      {
+        name: "🧩 Mods installés",
+        value: stats.mods,
+        inline: true
+      }
     )
     .setColor(0x2ecc71)
     .setFooter({ text: "Panel communautaire • Dumax" })
@@ -85,70 +95,55 @@ client.on("messageCreate", async (message) => {
   const cmd = args[0].toLowerCase();
   let updated = false;
 
-  if (cmd === "!joueurs") {
-    const nombre = args[1];
-    if (!nombre) return message.reply("Utilisation : `!joueurs 3`");
-    stats.joueurs = `${nombre} / 6`;
+  if (cmd === "!fermestotales") {
+    const value = args[1];
+    if (!value) return message.reply("Utilisation : `!fermestotales 12`");
+    stats.fermesTotales = value;
     updated = true;
   }
 
-  if (cmd === "!meteo") {
-    const meteo = args.slice(1).join(" ");
-    if (!meteo) return message.reply("Utilisation : `!meteo Soleil`");
-    stats.meteo = meteo;
-    updated = true;
-  }
-
-  if (cmd === "!heure") {
-    const heure = args.slice(1).join(" ");
-    if (!heure) return message.reply("Utilisation : `!heure 14h30`");
-    stats.heure = heure;
-    updated = true;
-  }
-
-  if (cmd === "!saison") {
-    const saison = args.slice(1).join(" ");
-    if (!saison) return message.reply("Utilisation : `!saison Printemps`");
-    stats.saison = saison;
-    updated = true;
-  }
-
-  if (cmd === "!fermes") {
-    const fermes = args[1];
-    if (!fermes) return message.reply("Utilisation : `!fermes 5`");
-    stats.fermes = fermes;
+  if (cmd === "!fermesreprises") {
+    const value = args[1];
+    if (!value) return message.reply("Utilisation : `!fermesreprises 5`");
+    stats.fermesReprises = value;
     updated = true;
   }
 
   if (cmd === "!mods") {
-    const mods = args[1];
-    if (!mods) return message.reply("Utilisation : `!mods 42`");
-    stats.mods = mods;
+    const value = args[1];
+    if (!value) return message.reply("Utilisation : `!mods 42`");
+    stats.mods = value;
     updated = true;
   }
 
   if (cmd === "!panel") {
     await updatePanel();
-    return message.reply("✅ Panel mis à jour.");
+    await message.delete().catch(() => {});
+    return;
   }
 
   if (cmd === "!commandes") {
-    return message.reply(
+    const reply = await message.reply(
       "**Commandes disponibles :**\n" +
-      "`!joueurs 3`\n" +
-      "`!meteo Soleil`\n" +
-      "`!heure 14h30`\n" +
-      "`!saison Printemps`\n" +
-      "`!fermes 5`\n" +
+      "`!fermestotales 12`\n" +
+      "`!fermesreprises 5`\n" +
       "`!mods 42`\n" +
       "`!panel`"
     );
+
+    setTimeout(() => reply.delete().catch(() => {}), 8000);
+    await message.delete().catch(() => {});
+    return;
   }
 
   if (updated) {
     saveStats();
     await updatePanel();
-    await message.reply("✅ Information mise à jour.");
+
+    const confirm = await message.channel.send("✅ Panel mis à jour");
+    setTimeout(() => confirm.delete().catch(() => {}), 3000);
+
+    await message.delete().catch(() => {});
   }
 });
 
