@@ -18,33 +18,86 @@ const client = new Client({
 
 let statusMessage = null;
 
-async function getPlayerCount() {
+function getValue(xml, names) {
+  for (const name of names) {
+    const attr = xml.match(new RegExp(`${name}="([^"]+)"`, "i"));
+    if (attr) return attr[1];
+
+    const tag = xml.match(new RegExp(`<${name}>(.*?)</${name}>`, "i"));
+    if (tag) return tag[1];
+  }
+  return null;
+}
+
+function getFarmCount(xml) {
+  const direct = getValue(xml, ["numFarms", "farmCount", "farmsCount"]);
+  if (direct) return direct;
+
+  const matches = xml.match(/<farm\b/gi);
+  return matches ? matches.length.toString() : "Indisponible";
+}
+
+function getModsCount(xml) {
+  const direct = getValue(xml, ["mods", "modCount", "modsCount"]);
+  if (direct) return direct;
+
+  const matches = xml.match(/<mod\b/gi);
+  return matches ? matches.length.toString() : "Indisponible";
+}
+
+async function getServerStats() {
   try {
+    if (!XML_URL) {
+      console.error("XML_URL manquant dans les variables Railway");
+      throw new Error("XML_URL manquant");
+    }
+
     const response = await fetch(XML_URL);
     const xml = await response.text();
 
-    const currentMatch =
-      xml.match(/numPlayers="(\d+)"/) ||
-      xml.match(/players="(\d+)"/) ||
-      xml.match(/currentPlayers="(\d+)"/);
+    const currentPlayers =
+      getValue(xml, ["numPlayers", "players", "currentPlayers", "playerCount"]) || "?";
 
-    const maxMatch =
-      xml.match(/capacity="(\d+)"/) ||
-      xml.match(/maxPlayers="(\d+)"/) ||
-      xml.match(/slots="(\d+)"/);
+    const maxPlayers =
+      getValue(xml, ["capacity", "maxPlayers", "slots", "maxPlayerCount"]) || "?";
 
-    const currentPlayers = currentMatch ? currentMatch[1] : "?";
-    const maxPlayers = maxMatch ? maxMatch[1] : "?";
+    const weather =
+      getValue(xml, ["weather", "currentWeather", "weatherState"]) || "Indisponible";
 
-    return `${currentPlayers} / ${maxPlayers}`;
+    const serverTime =
+      getValue(xml, ["time", "dayTime", "currentTime", "gameTime"]) || "Indisponible";
+
+    const season =
+      getValue(xml, ["season", "currentSeason", "seasonName"]) || "Indisponible";
+
+    const farms = getFarmCount(xml);
+    const mods = getModsCount(xml);
+
+    return {
+      players: `${currentPlayers} / ${maxPlayers}`,
+      weather,
+      serverTime,
+      season,
+      farms,
+      mods
+    };
+
   } catch (error) {
     console.error("Erreur lecture XML :", error);
-    return "Indisponible";
+
+    return {
+      players: "Indisponible",
+      weather: "Indisponible",
+      serverTime: "Indisponible",
+      season: "Indisponible",
+      farms: "Indisponible",
+      mods: "Indisponible"
+    };
   }
 }
 
 async function updatePanel() {
-  const players = await getPlayerCount();
+  const stats = await getServerStats();
 
   const embed = new EmbedBuilder()
     .setTitle("📊 Panel de serveur")
@@ -57,7 +110,32 @@ async function updatePanel() {
       },
       {
         name: "👥 Joueurs connectés",
-        value: players,
+        value: stats.players,
+        inline: true
+      },
+      {
+        name: "🕒 Heure serveur",
+        value: stats.serverTime,
+        inline: true
+      },
+      {
+        name: "🌤️ Météo",
+        value: stats.weather,
+        inline: true
+      },
+      {
+        name: "🍂 Saison",
+        value: stats.season,
+        inline: true
+      },
+      {
+        name: "🏡 Fermes créées",
+        value: stats.farms,
+        inline: true
+      },
+      {
+        name: "🧩 Mods installés",
+        value: stats.mods,
         inline: true
       }
     )
