@@ -18,6 +18,7 @@ const PRIMES_CHANNEL_ID = "1498064143394148502";
 const STAFF_ROLE_NAME = "━━━━━━━━━━ ⚡️ STAFF ━━━━━━━━━━";
 const SERVICE_ROLE_NAME = "━━━━━━━━━━ 🚜 ENTREPRISES AGRICOLES ━━━━━━━━━━";
 const SERVER_NAME = "Dumax FS25";
+const CURRENCY = "€";
 
 const DATA_FILE = "./stats.json";
 const ENTREPRISES_FILE = "./entreprises.json";
@@ -64,6 +65,28 @@ function saveData() {
   fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
   fs.writeFileSync(AMENDES_FILE, JSON.stringify(amendes, null, 2));
   fs.writeFileSync(PRIMES_FILE, JSON.stringify(primes, null, 2));
+}
+
+function parseAmount(value) {
+  const cleaned = String(value)
+    .replace(/\s/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
+
+  const number = Number(cleaned);
+  return Number.isNaN(number) ? 0 : number;
+}
+
+function formatMoney(value, prefix = "") {
+  const amount = parseAmount(value);
+
+  if (!amount) {
+    return `${prefix}${value} ${CURRENCY}`;
+  }
+
+  return `${prefix}${new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 2
+  }).format(amount)} ${CURRENCY}`;
 }
 
 function getColorByStatus() {
@@ -193,15 +216,12 @@ async function updateServices() {
 
   const description =
     `🚜 **Tableau de service des entreprises**\n\n` +
-
     `🟢 **EN SERVICE**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `${blocEnService}\n\n` +
-
     `🔴 **HORS SERVICE**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `${blocHorsService}\n\n` +
-
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `📘 **UTILISATION**\n` +
     `• \`/service\` → Prendre ou quitter le service\n` +
@@ -228,7 +248,6 @@ async function updateServices() {
 
   await servicesMessage.edit({ embeds: [embed] });
 }
-
 async function getServiceRoleMention(guild) {
   await guild.roles.fetch();
   const role = guild.roles.cache.find(r => r.name === SERVICE_ROLE_NAME);
@@ -264,10 +283,7 @@ function startServiceAlertLoop() {
           .setFooter({ text: "Dumax FS25 • Vérification automatique" })
           .setTimestamp();
 
-        await channel.send({
-          content: mention,
-          embeds: [embed]
-        });
+        await channel.send({ content: mention, embeds: [embed] });
 
         e.alertSent = true;
         updated = true;
@@ -413,17 +429,13 @@ const commands = [
     name: "amende-annuler",
     description: "Annuler une amende RP",
     type: 1,
-    options: [
-      { name: "numero", description: "Numéro de l’amende à annuler", type: 3, required: true }
-    ]
+    options: [{ name: "numero", description: "Numéro de l’amende à annuler", type: 3, required: true }]
   },
   {
     name: "amendes-historique",
     description: "Afficher l’historique des amendes d’une entreprise",
     type: 1,
-    options: [
-      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
-    ]
+    options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
   },
   {
     name: "prime",
@@ -436,12 +448,16 @@ const commands = [
     ]
   },
   {
+    name: "prime-annuler",
+    description: "Annuler une prime RP",
+    type: 1,
+    options: [{ name: "numero", description: "Numéro de la prime à annuler", type: 3, required: true }]
+  },
+  {
     name: "primes-historique",
     description: "Afficher l’historique des primes d’une entreprise",
     type: 1,
-    options: [
-      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
-    ]
+    options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
   },
   {
     name: "primes-classement",
@@ -477,6 +493,16 @@ client.once("ready", async () => {
     roleId: e.roleId || null
   }));
 
+  amendes = amendes.map(a => ({
+    ...a,
+    statut: a.statut || "ACTIVE"
+  }));
+
+  primes = primes.map(p => ({
+    ...p,
+    statut: p.statut || "ACTIVE"
+  }));
+
   saveData();
 
   await registerCommands();
@@ -494,10 +520,7 @@ client.on("interactionCreate", async interaction => {
     const choices = entreprises
       .filter(e => e.nom.toLowerCase().includes(focusedValue))
       .slice(0, 25)
-      .map(e => ({
-        name: e.nom,
-        value: e.nom
-      }));
+      .map(e => ({ name: e.nom, value: e.nom }));
 
     return interaction.respond(choices);
   }
@@ -510,18 +533,10 @@ client.on("interactionCreate", async interaction => {
 
   if (cmd === "service") {
     if (!staff && !serviceAllowed) {
-      return interaction.reply({
-        content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
     }
-  } else {
-    if (!staff) {
-      return interaction.reply({
-        content: "⛔ Tu n’as pas la permission d’utiliser cette commande.",
-        ephemeral: true
-      });
-    }
+  } else if (!staff) {
+    return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
   }
 
   if (cmd === "statut") {
@@ -548,10 +563,7 @@ client.on("interactionCreate", async interaction => {
     const existe = entreprises.some(e => e.nom.toLowerCase() === nom.toLowerCase());
 
     if (existe) {
-      return interaction.reply({
-        content: "❌ Cette entreprise existe déjà.",
-        ephemeral: true
-      });
+      return interaction.reply({ content: "❌ Cette entreprise existe déjà.", ephemeral: true });
     }
 
     entreprises.push({
@@ -576,9 +588,7 @@ client.on("interactionCreate", async interaction => {
     const statut = interaction.options.getString("statut");
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
 
-    if (!entreprise) {
-      return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
-    }
+    if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
 
     entreprise.recrutement = statut === "open" ? "🟢 Ouvert" : "🔴 Fermé";
   }
@@ -592,9 +602,7 @@ client.on("interactionCreate", async interaction => {
     const statut = interaction.options.getString("statut");
     const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
 
-    if (!entreprise) {
-      return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
-    }
+    if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
 
     if (cmd === "service" && !staff) {
       if (!entreprise.roleId) {
@@ -661,7 +669,7 @@ client.on("interactionCreate", async interaction => {
       .setDescription(
         `🏢 **Entreprise concernée :** ${entreprise.nom}\n` +
         `👤 **Patron notifié :** ${entreprise.patron}\n` +
-        `💰 **Montant :** ${montant} $\n` +
+        `💰 **Montant :** ${formatMoney(montant)}\n` +
         `📄 **Motif :** ${motif}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `⚠️ _Amende émise dans le cadre du règlement économique RP par la Banque de France._`
@@ -670,13 +678,10 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const amendesChannel = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await amendesChannel.send({ content: `${entreprise.patron}`, embeds: [embed] });
+    const ch = await client.channels.fetch(AMENDES_CHANNEL_ID);
+    await ch.send({ content: entreprise.patron, embeds: [embed] });
 
-    return interaction.reply({
-      content: `✅ Amende ${numero} envoyée dans le salon dédié.`,
-      ephemeral: true
-    });
+    return interaction.reply({ content: `✅ Amende ${numero} envoyée.`, ephemeral: true });
   }
 
   if (cmd === "amende-annuler") {
@@ -684,7 +689,9 @@ client.on("interactionCreate", async interaction => {
     const amende = amendes.find(a => a.numero === numero);
 
     if (!amende) return interaction.reply({ content: "❌ Amende introuvable.", ephemeral: true });
-    if (amende.statut === "ANNULÉE") return interaction.reply({ content: "⚠️ Cette amende est déjà annulée.", ephemeral: true });
+    if (amende.statut === "ANNULÉE") {
+      return interaction.reply({ content: "⚠️ Cette amende est déjà annulée.", ephemeral: true });
+    }
 
     amende.statut = "ANNULÉE";
     amende.dateAnnulation = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
@@ -697,7 +704,7 @@ client.on("interactionCreate", async interaction => {
       .setDescription(
         `🏢 **Entreprise concernée :** ${amende.entreprise}\n` +
         `👤 **Patron notifié :** ${amende.patron}\n` +
-        `💰 **Montant initial :** ${amende.montant} $\n` +
+        `💰 **Montant initial :** ${formatMoney(amende.montant)}\n` +
         `📄 **Motif initial :** ${amende.motif}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `⚠️ _Cette amende a été annulée par décision administrative de la Banque de France._`
@@ -706,13 +713,10 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const amendesChannel = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await amendesChannel.send({ content: `${amende.patron}`, embeds: [embed] });
+    const ch = await client.channels.fetch(AMENDES_CHANNEL_ID);
+    await ch.send({ content: amende.patron, embeds: [embed] });
 
-    return interaction.reply({
-      content: `✅ Amende ${numero} annulée.`,
-      ephemeral: true
-    });
+    return interaction.reply({ content: `✅ Amende ${numero} annulée.`, ephemeral: true });
   }
 
   if (cmd === "amendes-historique") {
@@ -723,30 +727,32 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (historique.length === 0) {
+    if (!historique.length) {
       return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
     }
 
-    const description = historique.map(a => {
+    const desc = historique.map(a => {
       const statut = a.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
-
       return (
         `**${a.numero}** — ${statut}\n` +
         `📅 ${a.date}\n` +
-        `💰 ${a.montant} $\n` +
+        `💰 ${formatMoney(a.montant)}\n` +
         `📄 ${a.motif}` +
         (a.statut === "ANNULÉE" ? `\n🕒 Annulée le : ${a.dateAnnulation || "Date inconnue"}` : "")
       );
     }).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    const embed = new EmbedBuilder()
-      .setTitle(`📁 Historique des amendes — ${nom}`)
-      .setDescription(description)
-      .setColor(0xf1c40f)
-      .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
-      .setTimestamp();
-
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`📁 Historique des amendes — ${nom}`)
+          .setDescription(desc)
+          .setColor(0xf1c40f)
+          .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
+          .setTimestamp()
+      ],
+      ephemeral: true
+    });
   }
 
   if (cmd === "prime") {
@@ -767,7 +773,8 @@ client.on("interactionCreate", async interaction => {
       montant,
       motif,
       date,
-      agent: interaction.user.tag
+      agent: interaction.user.tag,
+      statut: "ACTIVE"
     });
 
     saveData();
@@ -777,7 +784,7 @@ client.on("interactionCreate", async interaction => {
       .setDescription(
         `🏢 **Entreprise concernée :** ${entreprise.nom}\n` +
         `👤 **Patron notifié :** ${entreprise.patron}\n` +
-        `💰 **Montant :** +${montant} $\n` +
+        `💰 **Montant :** ${formatMoney(montant, "+")}\n` +
         `📄 **Motif :** ${motif}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `📈 _Prime accordée dans le cadre du soutien économique RP par la Banque de France._`
@@ -786,13 +793,45 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const primesChannel = await client.channels.fetch(PRIMES_CHANNEL_ID);
-    await primesChannel.send({ content: `${entreprise.patron}`, embeds: [embed] });
+    const ch = await client.channels.fetch(PRIMES_CHANNEL_ID);
+    await ch.send({ content: entreprise.patron, embeds: [embed] });
 
-    return interaction.reply({
-      content: `✅ Prime ${numero} envoyée dans le salon dédié.`,
-      ephemeral: true
-    });
+    return interaction.reply({ content: `✅ Prime ${numero} envoyée.`, ephemeral: true });
+  }
+
+  if (cmd === "prime-annuler") {
+    const numero = interaction.options.getString("numero").padStart(4, "0");
+    const prime = primes.find(p => p.numero === numero);
+
+    if (!prime) return interaction.reply({ content: "❌ Prime introuvable.", ephemeral: true });
+    if (prime.statut === "ANNULÉE") {
+      return interaction.reply({ content: "⚠️ Cette prime est déjà annulée.", ephemeral: true });
+    }
+
+    prime.statut = "ANNULÉE";
+    prime.dateAnnulation = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+    prime.agentAnnulation = interaction.user.tag;
+
+    saveData();
+
+    const embed = new EmbedBuilder()
+      .setTitle(`❌ ━━━━━━ ANNULATION DE PRIME ${numero} ━━━━━━`)
+      .setDescription(
+        `🏢 **Entreprise concernée :** ${prime.entreprise}\n` +
+        `👤 **Patron notifié :** ${prime.patron}\n` +
+        `💰 **Montant initial :** ${formatMoney(prime.montant, "+")}\n` +
+        `📄 **Motif initial :** ${prime.motif}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ _Cette prime a été annulée par décision administrative de la Banque de France._`
+      )
+      .setColor(0x95a5a6)
+      .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
+      .setTimestamp();
+
+    const ch = await client.channels.fetch(PRIMES_CHANNEL_ID);
+    await ch.send({ content: prime.patron, embeds: [embed] });
+
+    return interaction.reply({ content: `✅ Prime ${numero} annulée.`, ephemeral: true });
   }
 
   if (cmd === "primes-historique") {
@@ -803,66 +842,75 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (historique.length === 0) {
+    if (!historique.length) {
       return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
     }
 
-    const description = historique.map(p =>
-      `**${p.numero}**\n` +
-      `📅 ${p.date}\n` +
-      `💰 +${p.montant} $\n` +
-      `📄 ${p.motif}`
-    ).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
+    const desc = historique.map(p => {
+      const statut = p.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
+      return (
+        `**${p.numero}** — ${statut}\n` +
+        `📅 ${p.date}\n` +
+        `💰 ${formatMoney(p.montant, "+")}\n` +
+        `📄 ${p.motif}` +
+        (p.statut === "ANNULÉE" ? `\n🕒 Annulée le : ${p.dateAnnulation || "Date inconnue"}` : "")
+      );
+    }).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    const embed = new EmbedBuilder()
-      .setTitle(`📁 Historique des primes — ${nom}`)
-      .setDescription(description)
-      .setColor(0x2ecc71)
-      .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
-      .setTimestamp();
-
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`📁 Historique des primes — ${nom}`)
+          .setDescription(desc)
+          .setColor(0x2ecc71)
+          .setFooter({ text: "Dumax FS25 • Historique Banque de France" })
+          .setTimestamp()
+      ],
+      ephemeral: true
+    });
   }
 
   if (cmd === "primes-classement") {
-    if (primes.length === 0) {
-      return interaction.reply({ content: "📁 Aucune prime enregistrée pour le moment.", ephemeral: true });
+    const activePrimes = primes.filter(p => p.statut !== "ANNULÉE");
+
+    if (!activePrimes.length) {
+      return interaction.reply({ content: "📁 Aucune prime active enregistrée.", ephemeral: true });
     }
 
     const classement = {};
 
-    for (const p of primes) {
-      const montantNum = parseInt(String(p.montant).replace(/\D/g, ""), 10) || 0;
+    for (const p of activePrimes) {
+      const val = parseAmount(p.montant);
 
       if (!classement[p.entreprise]) {
-        classement[p.entreprise] = {
-          total: 0,
-          nombre: 0
-        };
+        classement[p.entreprise] = { total: 0, nombre: 0 };
       }
 
-      classement[p.entreprise].total += montantNum;
+      classement[p.entreprise].total += val;
       classement[p.entreprise].nombre += 1;
     }
 
-    const lignes = Object.entries(classement)
+    const desc = Object.entries(classement)
       .sort((a, b) => b[1].total - a[1].total)
       .slice(0, 10)
       .map(([entreprise, data], index) =>
         `**#${index + 1} — ${entreprise}**\n` +
-        `💰 Total : ${data.total} $\n` +
-        `📄 Primes reçues : ${data.nombre}`
+        `💰 Total : ${formatMoney(data.total)}\n` +
+        `📄 Primes actives : ${data.nombre}`
       )
       .join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    const embed = new EmbedBuilder()
-      .setTitle("🏆 ━━━━━━ CLASSEMENT DES PRIMES ━━━━━━")
-      .setDescription(lignes)
-      .setColor(0xf1c40f)
-      .setFooter({ text: "Dumax FS25 • Classement Banque de France" })
-      .setTimestamp();
-
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🏆 ━━━━━━ CLASSEMENT DES PRIMES ━━━━━━")
+          .setDescription(desc)
+          .setColor(0xf1c40f)
+          .setFooter({ text: "Dumax FS25 • Classement Banque de France" })
+          .setTimestamp()
+      ],
+      ephemeral: true
+    });
   }
 
   if (cmd === "maj") {
@@ -870,10 +918,7 @@ client.on("interactionCreate", async interaction => {
     await updateEntreprises();
     await updateServices();
 
-    return interaction.reply({
-      content: "✅ Panels mis à jour.",
-      ephemeral: true
-    });
+    return interaction.reply({ content: "✅ Panels mis à jour.", ephemeral: true });
   }
 
   saveData();
@@ -881,10 +926,7 @@ client.on("interactionCreate", async interaction => {
   await updateEntreprises();
   await updateServices();
 
-  return interaction.reply({
-    content: "✅ Mise à jour effectuée.",
-    ephemeral: true
-  });
+  return interaction.reply({ content: "✅ Mise à jour effectuée.", ephemeral: true });
 });
 
 client.login(TOKEN);
