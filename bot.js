@@ -166,7 +166,7 @@ async function updateEntreprises() {
       `📋 **Registre officiel des entreprises reprises**\n\n` +
       `🏢 **Entreprises enregistrées :** \`${entreprises.length}\`\n` +
       `📥 **Recrutements ouverts :** \`${openCount}\`\n\n` +
-      `_Les entreprises sont affichées ci-dessous sous forme compacte._`
+      `_Les entreprises sont affichées ci-dessous._`
     )
     .setFooter({ text: "Dumax FS25 • Registre officiel des entreprises" })
     .setTimestamp();
@@ -186,8 +186,9 @@ async function updateEntreprises() {
           `👤 **Patron :** ${e.patron || "Non défini"}\n` +
           `🏷️ **Rôle :** ${e.roleId ? `<@&${e.roleId}>` : "Non défini"}\n` +
           `📥 **Recrutement :** ${e.recrutement || "🟢 Ouvert"}\n` +
-          `🚜 **Service :** ${e.service || "🔴 Hors service"}`,
-        inline: true
+          `🚜 **Service :** ${e.service || "🔴 Hors service"}\n` +
+          `━━━━━━━━━━━━━━`,
+        inline: false
       });
     });
   }
@@ -252,6 +253,7 @@ async function updateServices() {
 
   await servicesMessage.edit({ embeds: [embed] });
 }
+
 async function getServiceRoleMention(guild) {
   await guild.roles.fetch();
   const role = guild.roles.cache.find(r => r.name === SERVICE_ROLE_NAME);
@@ -297,7 +299,6 @@ function startServiceAlertLoop() {
     if (updated) saveData();
   }, 5 * 60 * 1000);
 }
-
 const commands = [
   {
     name: "statut",
