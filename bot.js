@@ -125,7 +125,7 @@ async function fetchPanelMessage(channel, titlePart) {
 
 async function updatePanel() {
   const embed = new EmbedBuilder()
-    .setTitle("🚜 ━━ CENTRE DE COORDINATION DES FERMES ━━")
+    .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
     .setDescription(
       `🏛️ **Serveur : ${SERVER_NAME}**\n` +
       `🌾 _Tableau de suivi officiel du serveur agricole_\n\n` +
