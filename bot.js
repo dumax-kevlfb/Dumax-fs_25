@@ -125,7 +125,7 @@ async function fetchPanelMessage(channel, titlePart) {
 
 async function updatePanel() {
   const embed = new EmbedBuilder()
-    .setTitle("📊 ━━━━━━━━━━ PANEL SERVEUR ━━━━━━━━━━")
+    .setTitle("🚜 ━━ CENTRE DE COORDINATION DES FERMES ━━")
     .setDescription(
       `🏛️ **Serveur : ${SERVER_NAME}**\n` +
       `🌾 _Tableau de suivi officiel du serveur agricole_\n\n` +
@@ -233,7 +233,7 @@ async function updateServices() {
     `📌 _Pensez à quitter le service en fin de session._`;
 
   const embed = new EmbedBuilder()
-    .setTitle("🚜 ━━━━━━━━━━ SERVICES ENTREPRISES ━━━━━━━━━━")
+    .setTitle("📟 ━━━ ENTREPRISES EN SERVICES ━━━")
     .setDescription(description)
     .setColor(enService.length > 0 ? 0x2ecc71 : 0xe74c3c)
     .setFooter({ text: "Dumax FS25 • Tableau opérationnel" })
