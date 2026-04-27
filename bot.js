@@ -163,7 +163,6 @@ async function updateEntreprises() {
     .setTitle("🏢 REGISTRE DES ENTREPRISES")
     .setColor(0x3498db)
     .setDescription(
-      `📋 **Registre officiel des entreprises reprises**\n\n` +
       `🏢 **Entreprises enregistrées :** \`${entreprises.length}\`\n` +
       `📥 **Recrutements ouverts :** \`${openCount}\`\n\n` +
       `_Les entreprises sont affichées ci-dessous._`
