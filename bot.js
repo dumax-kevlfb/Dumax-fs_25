@@ -24,6 +24,7 @@ const DATA_FILE = "./stats.json";
 const ENTREPRISES_FILE = "./entreprises.json";
 const AMENDES_FILE = "./amendes.json";
 const PRIMES_FILE = "./primes.json";
+const SANCTIONS_FILE = "./sanctions.json";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -37,6 +38,7 @@ let stats = {
 let entreprises = [];
 let amendes = [];
 let primes = [];
+let sanctions = [];
 
 let panelMessage = null;
 let entreprisesMessage = null;
@@ -58,6 +60,7 @@ function loadData() {
   if (fs.existsSync(ENTREPRISES_FILE)) entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
   if (fs.existsSync(AMENDES_FILE)) amendes = JSON.parse(fs.readFileSync(AMENDES_FILE, "utf8"));
   if (fs.existsSync(PRIMES_FILE)) primes = JSON.parse(fs.readFileSync(PRIMES_FILE, "utf8"));
+  if (fs.existsSync(SANCTIONS_FILE)) sanctions = JSON.parse(fs.readFileSync(SANCTIONS_FILE, "utf8"));
 }
 
 function saveData() {
@@ -65,6 +68,23 @@ function saveData() {
   fs.writeFileSync(ENTREPRISES_FILE, JSON.stringify(entreprises, null, 2));
   fs.writeFileSync(AMENDES_FILE, JSON.stringify(amendes, null, 2));
   fs.writeFileSync(PRIMES_FILE, JSON.stringify(primes, null, 2));
+  fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
+}
+
+function addSanctionHistory({ type, member, userTag, motif, duree, staff }) {
+  sanctions.push({
+    id: String(sanctions.length + 1).padStart(4, "0"),
+    userId: member.id,
+    userTag: userTag || member.user.tag,
+    type,
+    motif: motif || "Aucun motif renseigné",
+    duree: duree || null,
+    staffId: staff.id,
+    staffTag: staff.tag,
+    date: new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" })
+  });
+
+  saveData();
 }
 
 function parseAmount(value) {
@@ -80,9 +100,7 @@ function parseAmount(value) {
 function formatMoney(value, prefix = "") {
   const amount = parseAmount(value);
 
-  if (!amount) {
-    return `${prefix}${value} ${CURRENCY}`;
-  }
+  if (!amount) return `${prefix}${value} ${CURRENCY}`;
 
   return `${prefix}${new Intl.NumberFormat("fr-FR", {
     maximumFractionDigits: 2
@@ -122,7 +140,6 @@ async function fetchPanelMessage(channel, titlePart) {
     m.embeds[0]?.title?.includes(titlePart)
   );
 }
-
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -145,7 +162,7 @@ async function updatePanel() {
   const channel = await client.channels.fetch(CHANNEL_ID);
 
   if (!panelMessage) {
-    panelMessage = await fetchPanelMessage(channel, "PANEL SERVEUR");
+    panelMessage = await fetchPanelMessage(channel, "PRÉFECTURE AGRICOLE");
 
     if (!panelMessage) {
       panelMessage = await channel.send({ embeds: [embed] });
@@ -242,7 +259,7 @@ async function updateServices() {
   const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
 
   if (!servicesMessage) {
-    servicesMessage = await fetchPanelMessage(channel, "SERVICES ENTREPRISES");
+    servicesMessage = await fetchPanelMessage(channel, "ENTREPRISES EN SERVICES");
 
     if (!servicesMessage) {
       servicesMessage = await channel.send({ embeds: [embed] });
@@ -300,6 +317,37 @@ function startServiceAlertLoop() {
 }
 const commands = [
   {
+    name: "sanction",
+    description: "Appliquer une sanction à un membre",
+    type: 1,
+    options: [
+      {
+        name: "type",
+        description: "Type de sanction",
+        type: 3,
+        required: true,
+        choices: [
+          { name: "Mute", value: "mute" },
+          { name: "Unmute", value: "unmute" },
+          { name: "Ban", value: "ban" },
+          { name: "Kick", value: "kick" },
+          { name: "Warn", value: "warn" }
+        ]
+      },
+      { name: "joueur", description: "Joueur concerné", type: 6, required: true },
+      { name: "motif", description: "Motif de la sanction", type: 3, required: false },
+      { name: "duree", description: "Durée du mute en minutes", type: 4, required: false }
+    ]
+  },
+  {
+    name: "sanctions-historique",
+    description: "Afficher l’historique des sanctions d’un joueur",
+    type: 1,
+    options: [
+      { name: "joueur", description: "Joueur concerné", type: 6, required: true }
+    ]
+  },
+  {
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
@@ -333,11 +381,7 @@ const commands = [
     type: 1,
     options: [{ name: "nombre", description: "Nombre de mods installés", type: 3, required: true }]
   },
-  {
-    name: "maj",
-    description: "Mettre à jour les panels",
-    type: 1
-  },
+  { name: "maj", description: "Mettre à jour les panels", type: 1 },
   {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
@@ -463,11 +507,7 @@ const commands = [
     type: 1,
     options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
   },
-  {
-    name: "primes-classement",
-    description: "Afficher le classement des entreprises primées",
-    type: 1
-  }
+  { name: "primes-classement", description: "Afficher le classement des entreprises primées", type: 1 }
 ];
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -497,15 +537,8 @@ client.once("ready", async () => {
     roleId: e.roleId || null
   }));
 
-  amendes = amendes.map(a => ({
-    ...a,
-    statut: a.statut || "ACTIVE"
-  }));
-
-  primes = primes.map(p => ({
-    ...p,
-    statut: p.statut || "ACTIVE"
-  }));
+  amendes = amendes.map(a => ({ ...a, statut: a.statut || "ACTIVE" }));
+  primes = primes.map(p => ({ ...p, statut: p.statut || "ACTIVE" }));
 
   saveData();
 
@@ -516,7 +549,6 @@ client.once("ready", async () => {
 
   startServiceAlertLoop();
 });
-
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
     const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -536,11 +568,195 @@ client.on("interactionCreate", async interaction => {
   const serviceAllowed = isServiceAllowed(interaction.member);
 
   if (cmd === "service") {
-    if (!staff && !serviceAllowed) {
-      return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
-    }
+    if (!staff && !serviceAllowed) return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
   } else if (!staff) {
     return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
+  }
+
+  if (cmd === "sanction") {
+    const type = interaction.options.getString("type");
+    const member = interaction.options.getMember("joueur");
+    const motif = interaction.options.getString("motif");
+    const duree = interaction.options.getInteger("duree");
+
+    if (!member) return interaction.reply({ content: "❌ Membre introuvable.", ephemeral: true });
+    if (member.id === interaction.user.id) return interaction.reply({ content: "❌ Tu ne peux pas te sanctionner toi-même.", ephemeral: true });
+    if (member.id === client.user.id) return interaction.reply({ content: "❌ Je ne peux pas me sanctionner moi-même.", ephemeral: true });
+
+    if (["mute", "ban", "kick", "warn"].includes(type) && !motif) {
+      return interaction.reply({ content: "❌ Tu dois indiquer un motif pour cette sanction.", ephemeral: true });
+    }
+
+    try {
+      if (type === "mute") {
+        if (!duree || duree <= 0) return interaction.reply({ content: "❌ Tu dois indiquer une durée valide en minutes.", ephemeral: true });
+
+        const dureeMs = duree * 60 * 1000;
+
+        if (dureeMs > 28 * 24 * 60 * 60 * 1000) {
+          return interaction.reply({ content: "❌ La durée maximale d’un mute Discord est de 28 jours.", ephemeral: true });
+        }
+
+        if (!member.moderatable) {
+          return interaction.reply({ content: "❌ Impossible de mute ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
+        }
+
+        await member.timeout(dureeMs, motif);
+
+        addSanctionHistory({
+          type: "Mute",
+          member,
+          motif,
+          duree: `${duree} minute(s)`,
+          staff: interaction.user
+        });
+
+        return interaction.reply({
+          content:
+            `🔇 **Sanction appliquée**\n\n` +
+            `👤 Joueur : ${member}\n` +
+            `📌 Type : **Mute**\n` +
+            `⏱️ Durée : **${duree} minute(s)**\n` +
+            `📄 Motif : **${motif}**\n` +
+            `🛡️ Staff : ${interaction.user}`
+        });
+      }
+
+      if (type === "unmute") {
+        if (!member.moderatable) {
+          return interaction.reply({ content: "❌ Impossible d’unmute ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
+        }
+
+        await member.timeout(null);
+
+        addSanctionHistory({
+          type: "Unmute",
+          member,
+          motif: "Mute levé",
+          staff: interaction.user
+        });
+
+        return interaction.reply({
+          content:
+            `🔊 **Sanction levée**\n\n` +
+            `👤 Joueur : ${member}\n` +
+            `📌 Type : **Unmute**\n` +
+            `🛡️ Staff : ${interaction.user}`
+        });
+      }
+
+      if (type === "ban") {
+        if (!member.bannable) {
+          return interaction.reply({ content: "❌ Impossible de bannir ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
+        }
+
+        const userTag = member.user.tag;
+        await member.ban({ reason: motif });
+
+        addSanctionHistory({
+          type: "Ban",
+          member,
+          userTag,
+          motif,
+          staff: interaction.user
+        });
+
+        return interaction.reply({
+          content:
+            `⛔ **Sanction appliquée**\n\n` +
+            `👤 Joueur : **${userTag}**\n` +
+            `📌 Type : **Ban**\n` +
+            `📄 Motif : **${motif}**\n` +
+            `🛡️ Staff : ${interaction.user}`
+        });
+      }
+
+      if (type === "kick") {
+        if (!member.kickable) {
+          return interaction.reply({ content: "❌ Impossible d’expulser ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
+        }
+
+        const userTag = member.user.tag;
+        await member.kick(motif);
+
+        addSanctionHistory({
+          type: "Kick",
+          member,
+          userTag,
+          motif,
+          staff: interaction.user
+        });
+
+        return interaction.reply({
+          content:
+            `👢 **Sanction appliquée**\n\n` +
+            `👤 Joueur : **${userTag}**\n` +
+            `📌 Type : **Kick**\n` +
+            `📄 Motif : **${motif}**\n` +
+            `🛡️ Staff : ${interaction.user}`
+        });
+      }
+
+      if (type === "warn") {
+        addSanctionHistory({
+          type: "Warn",
+          member,
+          motif,
+          staff: interaction.user
+        });
+
+        return interaction.reply({
+          content:
+            `⚠️ **Avertissement appliqué**\n\n` +
+            `👤 Joueur : ${member}\n` +
+            `📌 Type : **Warn**\n` +
+            `📄 Motif : **${motif}**\n` +
+            `🛡️ Staff : ${interaction.user}`
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      return interaction.reply({ content: "❌ Une erreur est survenue pendant l’application de la sanction.", ephemeral: true });
+    }
+  }
+
+  if (cmd === "sanctions-historique") {
+    const member = interaction.options.getMember("joueur");
+
+    if (!member) return interaction.reply({ content: "❌ Membre introuvable.", ephemeral: true });
+
+    const historique = sanctions
+      .filter(s => s.userId === member.id)
+      .slice(-10)
+      .reverse();
+
+    if (!historique.length) {
+      return interaction.reply({
+        content: `📁 Aucun historique de sanction pour ${member}.`,
+        ephemeral: true
+      });
+    }
+
+    const desc = historique.map(s => (
+      `**#${s.id} — ${s.type}**\n` +
+      `📅 Date : ${s.date}\n` +
+      `👤 Joueur : ${s.userTag}\n` +
+      `📄 Motif : ${s.motif}\n` +
+      (s.duree ? `⏱️ Durée : ${s.duree}\n` : "") +
+      `🛡️ Staff : ${s.staffTag}`
+    )).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
+
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`📁 Historique des sanctions — ${member.user.tag}`)
+          .setDescription(desc)
+          .setColor(0xe67e22)
+          .setFooter({ text: "Dumax FS25 • Registre disciplinaire" })
+          .setTimestamp()
+      ],
+      ephemeral: true
+    });
   }
 
   if (cmd === "statut") {
@@ -565,10 +781,7 @@ client.on("interactionCreate", async interaction => {
     const recrutement = interaction.options.getString("recrutement");
 
     const existe = entreprises.some(e => e.nom.toLowerCase() === nom.toLowerCase());
-
-    if (existe) {
-      return interaction.reply({ content: "❌ Cette entreprise existe déjà.", ephemeral: true });
-    }
+    if (existe) return interaction.reply({ content: "❌ Cette entreprise existe déjà.", ephemeral: true });
 
     entreprises.push({
       nom,
@@ -609,18 +822,9 @@ client.on("interactionCreate", async interaction => {
     if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
 
     if (cmd === "service" && !staff) {
-      if (!entreprise.roleId) {
-        return interaction.reply({
-          content: "⛔ Aucun rôle Discord n’est lié à cette entreprise. Contacte le staff.",
-          ephemeral: true
-        });
-      }
-
+      if (!entreprise.roleId) return interaction.reply({ content: "⛔ Aucun rôle Discord n’est lié à cette entreprise.", ephemeral: true });
       if (!interaction.member.roles.cache.has(entreprise.roleId)) {
-        return interaction.reply({
-          content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
-          ephemeral: true
-        });
+        return interaction.reply({ content: "⛔ Tu ne peux gérer que le service de ton entreprise.", ephemeral: true });
       }
     }
 
@@ -693,9 +897,7 @@ client.on("interactionCreate", async interaction => {
     const amende = amendes.find(a => a.numero === numero);
 
     if (!amende) return interaction.reply({ content: "❌ Amende introuvable.", ephemeral: true });
-    if (amende.statut === "ANNULÉE") {
-      return interaction.reply({ content: "⚠️ Cette amende est déjà annulée.", ephemeral: true });
-    }
+    if (amende.statut === "ANNULÉE") return interaction.reply({ content: "⚠️ Cette amende est déjà annulée.", ephemeral: true });
 
     amende.statut = "ANNULÉE";
     amende.dateAnnulation = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
@@ -731,9 +933,7 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (!historique.length) {
-      return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
-    }
+    if (!historique.length) return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
 
     const desc = historique.map(a => {
       const statut = a.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
@@ -808,9 +1008,7 @@ client.on("interactionCreate", async interaction => {
     const prime = primes.find(p => p.numero === numero);
 
     if (!prime) return interaction.reply({ content: "❌ Prime introuvable.", ephemeral: true });
-    if (prime.statut === "ANNULÉE") {
-      return interaction.reply({ content: "⚠️ Cette prime est déjà annulée.", ephemeral: true });
-    }
+    if (prime.statut === "ANNULÉE") return interaction.reply({ content: "⚠️ Cette prime est déjà annulée.", ephemeral: true });
 
     prime.statut = "ANNULÉE";
     prime.dateAnnulation = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
@@ -846,9 +1044,7 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (!historique.length) {
-      return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
-    }
+    if (!historique.length) return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
 
     const desc = historique.map(p => {
       const statut = p.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
@@ -877,18 +1073,14 @@ client.on("interactionCreate", async interaction => {
   if (cmd === "primes-classement") {
     const activePrimes = primes.filter(p => p.statut !== "ANNULÉE");
 
-    if (!activePrimes.length) {
-      return interaction.reply({ content: "📁 Aucune prime active enregistrée.", ephemeral: true });
-    }
+    if (!activePrimes.length) return interaction.reply({ content: "📁 Aucune prime active enregistrée.", ephemeral: true });
 
     const classement = {};
 
     for (const p of activePrimes) {
       const val = parseAmount(p.montant);
 
-      if (!classement[p.entreprise]) {
-        classement[p.entreprise] = { total: 0, nombre: 0 };
-      }
+      if (!classement[p.entreprise]) classement[p.entreprise] = { total: 0, nombre: 0 };
 
       classement[p.entreprise].total += val;
       classement[p.entreprise].nombre += 1;
