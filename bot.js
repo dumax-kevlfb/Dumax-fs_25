@@ -159,34 +159,39 @@ async function updatePanel() {
 async function updateEntreprises() {
   const openCount = entreprises.filter(e => (e.recrutement || "").includes("Ouvert")).length;
 
-  const pad = (str, len) => {
-    str = String(str);
-    return str.length >= len ? str.slice(0, len) : str + " ".repeat(len - str.length);
-  };
-
-  const header =
-    `🏢 **Entreprise**       👤 **Patron**       📥 **Recrutement**       🚜 **Service**\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-  let lignes = entreprises.map(e => {
-    const nom = pad(e.nom, 18);
-    const patron = e.patron || "N/A"; // mention reste cliquable
-    const recrutement = (e.recrutement || "🟢 Ouvert").replace("🟢 ", "").replace("🔴 ", "");
-    const service = (e.service || "🔴 Hors service").replace("🟢 ", "").replace("🔴 ", "");
-
-    return `${nom} ${patron} ${pad(recrutement, 15)} ${service}`;
-  }).join("\n");
-
   const embed = new EmbedBuilder()
     .setTitle("🏢 REGISTRE DES ENTREPRISES")
     .setColor(0x3498db)
     .setDescription(
       `📋 **Registre officiel des entreprises reprises**\n\n` +
-      `🏢 **Entreprises :** \`${entreprises.length}\` | 📥 **Ouverts :** \`${openCount}\`\n\n` +
-      header + lignes
+      `🏢 **Entreprises enregistrées :** \`${entreprises.length}\`\n` +
+      `📥 **Recrutements ouverts :** \`${openCount}\`\n\n` +
+      `_Les entreprises sont affichées ci-dessous._`
     )
     .setFooter({ text: "Dumax FS25 • Registre officiel des entreprises" })
     .setTimestamp();
+
+  if (entreprises.length === 0) {
+    embed.addFields({
+      name: "📭 Aucune entreprise",
+      value: "```Aucune entreprise enregistrée pour le moment.```",
+      inline: false
+    });
+  } else {
+    entreprises.forEach(e => {
+      embed.addFields({
+        name: `🏛️ ${e.nom}`,
+        value:
+          `🌾 **Secteur :** ${e.secteur || "Non défini"}\n` +
+          `👤 **Patron :** ${e.patron || "Non défini"}\n` +
+          `🏷️ **Rôle :** ${e.roleId ? `<@&${e.roleId}>` : "Non défini"}\n` +
+          `📥 **Recrutement :** ${e.recrutement || "🟢 Ouvert"}\n` +
+          `🚜 **Service :** ${e.service || "🔴 Hors service"}\n` +
+          `━━━━━━━━━━━━━━`,
+        inline: false
+      });
+    });
+  }
 
   const channel = await client.channels.fetch(ENTREPRISES_CHANNEL_ID);
 
