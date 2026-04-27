@@ -71,9 +71,18 @@ function saveData() {
   fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
 }
 
+function getNextSanctionNumber() {
+  const max = sanctions.reduce((highest, s) => {
+    const n = parseInt(s.id, 10);
+    return Number.isNaN(n) ? highest : Math.max(highest, n);
+  }, 0);
+
+  return String(max + 1).padStart(4, "0");
+}
+
 function addSanctionHistory({ type, member, userTag, motif, duree, staff }) {
   sanctions.push({
-    id: String(sanctions.length + 1).padStart(4, "0"),
+    id: getNextSanctionNumber(),
     userId: member.id,
     userTag: userTag || member.user.tag,
     type,
@@ -340,6 +349,15 @@ const commands = [
     ]
   },
   {
+    name: "sanction-annuler",
+    description: "Annuler une sanction du registre",
+    type: 1,
+    options: [
+      { name: "numero", description: "Numéro de la sanction à annuler", type: 3, required: true },
+      { name: "motif", description: "Motif de l’annulation", type: 3, required: true }
+    ]
+  },
+  {
     name: "sanctions-historique",
     description: "Afficher l’historique des sanctions d’un joueur",
     type: 1,
@@ -381,7 +399,11 @@ const commands = [
     type: 1,
     options: [{ name: "nombre", description: "Nombre de mods installés", type: 3, required: true }]
   },
-  { name: "maj", description: "Mettre à jour les panels", type: 1 },
+  {
+    name: "maj",
+    description: "Mettre à jour les panels",
+    type: 1
+  },
   {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
@@ -507,7 +529,11 @@ const commands = [
     type: 1,
     options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
   },
-  { name: "primes-classement", description: "Afficher le classement des entreprises primées", type: 1 }
+  {
+    name: "primes-classement",
+    description: "Afficher le classement des entreprises primées",
+    type: 1
+  }
 ];
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -537,8 +563,15 @@ client.once("ready", async () => {
     roleId: e.roleId || null
   }));
 
-  amendes = amendes.map(a => ({ ...a, statut: a.statut || "ACTIVE" }));
-  primes = primes.map(p => ({ ...p, statut: p.statut || "ACTIVE" }));
+  amendes = amendes.map(a => ({
+    ...a,
+    statut: a.statut || "ACTIVE"
+  }));
+
+  primes = primes.map(p => ({
+    ...p,
+    statut: p.statut || "ACTIVE"
+  }));
 
   saveData();
 
@@ -568,7 +601,9 @@ client.on("interactionCreate", async interaction => {
   const serviceAllowed = isServiceAllowed(interaction.member);
 
   if (cmd === "service") {
-    if (!staff && !serviceAllowed) return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
+    if (!staff && !serviceAllowed) {
+      return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
+    }
   } else if (!staff) {
     return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
   }
@@ -589,7 +624,9 @@ client.on("interactionCreate", async interaction => {
 
     try {
       if (type === "mute") {
-        if (!duree || duree <= 0) return interaction.reply({ content: "❌ Tu dois indiquer une durée valide en minutes.", ephemeral: true });
+        if (!duree || duree <= 0) {
+          return interaction.reply({ content: "❌ Tu dois indiquer une durée valide en minutes.", ephemeral: true });
+        }
 
         const dureeMs = duree * 60 * 1000;
 
@@ -720,6 +757,47 @@ client.on("interactionCreate", async interaction => {
     }
   }
 
+  if (cmd === "sanction-annuler") {
+    const numero = interaction.options.getString("numero").padStart(4, "0");
+    const motifAnnulation = interaction.options.getString("motif");
+
+    const index = sanctions.findIndex(s => s.id === numero);
+
+    if (index === -1) {
+      return interaction.reply({
+        content: "❌ Sanction introuvable.",
+        ephemeral: true
+      });
+    }
+
+    const ancienneSanction = sanctions.splice(index, 1)[0];
+
+    sanctions.push({
+      id: getNextSanctionNumber(),
+      userId: ancienneSanction.userId,
+      userTag: ancienneSanction.userTag,
+      type: `Annulation ${ancienneSanction.type}`,
+      motif: motifAnnulation,
+      duree: null,
+      staffId: interaction.user.id,
+      staffTag: interaction.user.tag,
+      date: new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" }),
+      sanctionAnnulee: ancienneSanction.id
+    });
+
+    saveData();
+
+    return interaction.reply({
+      content:
+        `🟢 **Sanction annulée**\n\n` +
+        `👤 Joueur : **${ancienneSanction.userTag}**\n` +
+        `📌 Sanction annulée : **#${ancienneSanction.id} — ${ancienneSanction.type}**\n` +
+        `📄 Motif de l’annulation : **${motifAnnulation}**\n` +
+        `🛡️ Staff : ${interaction.user}`,
+      ephemeral: true
+    });
+  }
+
   if (cmd === "sanctions-historique") {
     const member = interaction.options.getMember("joueur");
 
@@ -743,6 +821,7 @@ client.on("interactionCreate", async interaction => {
       `👤 Joueur : ${s.userTag}\n` +
       `📄 Motif : ${s.motif}\n` +
       (s.duree ? `⏱️ Durée : ${s.duree}\n` : "") +
+      (s.sanctionAnnulee ? `↩️ Sanction initiale annulée : #${s.sanctionAnnulee}\n` : "") +
       `🛡️ Staff : ${s.staffTag}`
     )).join("\n\n━━━━━━━━━━━━━━━━━━━━\n\n");
 
@@ -822,7 +901,10 @@ client.on("interactionCreate", async interaction => {
     if (!entreprise) return interaction.reply({ content: "❌ Entreprise introuvable.", ephemeral: true });
 
     if (cmd === "service" && !staff) {
-      if (!entreprise.roleId) return interaction.reply({ content: "⛔ Aucun rôle Discord n’est lié à cette entreprise.", ephemeral: true });
+      if (!entreprise.roleId) {
+        return interaction.reply({ content: "⛔ Aucun rôle Discord n’est lié à cette entreprise.", ephemeral: true });
+      }
+
       if (!interaction.member.roles.cache.has(entreprise.roleId)) {
         return interaction.reply({ content: "⛔ Tu ne peux gérer que le service de ton entreprise.", ephemeral: true });
       }
@@ -847,8 +929,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-
-  if (cmd === "amende") {
+    if (cmd === "amende") {
     const nom = interaction.options.getString("entreprise");
     const montant = interaction.options.getString("montant");
     const motif = interaction.options.getString("motif");
@@ -933,7 +1014,9 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (!historique.length) return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
+    if (!historique.length) {
+      return interaction.reply({ content: "📁 Aucune amende enregistrée pour cette entreprise.", ephemeral: true });
+    }
 
     const desc = historique.map(a => {
       const statut = a.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
@@ -1044,7 +1127,9 @@ client.on("interactionCreate", async interaction => {
       .slice(-10)
       .reverse();
 
-    if (!historique.length) return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
+    if (!historique.length) {
+      return interaction.reply({ content: "📁 Aucune prime enregistrée pour cette entreprise.", ephemeral: true });
+    }
 
     const desc = historique.map(p => {
       const statut = p.statut === "ANNULÉE" ? "❌ ANNULÉE" : "✅ ACTIVE";
@@ -1073,7 +1158,9 @@ client.on("interactionCreate", async interaction => {
   if (cmd === "primes-classement") {
     const activePrimes = primes.filter(p => p.statut !== "ANNULÉE");
 
-    if (!activePrimes.length) return interaction.reply({ content: "📁 Aucune prime active enregistrée.", ephemeral: true });
+    if (!activePrimes.length) {
+      return interaction.reply({ content: "📁 Aucune prime active enregistrée.", ephemeral: true });
+    }
 
     const classement = {};
 
