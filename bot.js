@@ -28,6 +28,7 @@ const ENTREPRISES_CHANNEL_ID = "1498040049533456556";
 const SERVICES_CHANNEL_ID = "1498067350818738176";
 const PRIMES_CHANNEL_ID = "1498064143394148502";
 const ABSENCES_CHANNEL_ID = "1498597445758746664";
+const ABSENT_ROLE_ID = "1498607458187350017";
 
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
 const SERVICE_ROLE_NAME = "━━━ 🚜 ENTREPRISES AGRICOLES ━━━";
@@ -41,7 +42,12 @@ const PRIMES_FILE = "./primes.json";
 const SANCTIONS_FILE = "./sanctions.json";
 const ABSENCES_FILE = "./absences.json";
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
+});
 
 let stats = {
   fermesTotales: "0",
@@ -184,9 +190,7 @@ async function fetchPanelMessage(channel, titlePart) {
 function getMemberEntreprises(member) {
   const staff = isStaff(member);
 
-  if (staff) {
-    return entreprises;
-  }
+  if (staff) return entreprises;
 
   return entreprises.filter(e => {
     if (!e.roleId) return false;
@@ -194,6 +198,55 @@ function getMemberEntreprises(member) {
   });
 }
 
+// ===== ABSENCE : GESTION ROLE + PSEUDO =====
+
+async function applyAbsenceStatus(member) {
+  if (!member) return;
+
+  try {
+    const role = member.guild.roles.cache.get(ABSENT_ROLE_ID);
+    if (role && !member.roles.cache.has(role.id)) {
+      await member.roles.add(role);
+    }
+  } catch (error) {
+    console.error("Erreur ajout rôle absent :", error.message);
+  }
+
+  try {
+    const currentName = member.nickname || member.user.username;
+
+    if (!currentName.startsWith("[ABS]")) {
+      await member.setNickname(`[ABS] ${currentName}`);
+    }
+  } catch (error) {
+    console.error("Erreur ajout [ABS] pseudo :", error.message);
+  }
+}
+
+async function removeAbsenceStatus(member) {
+  if (!member) return;
+
+  try {
+    const role = member.guild.roles.cache.get(ABSENT_ROLE_ID);
+    if (role && member.roles.cache.has(role.id)) {
+      await member.roles.remove(role);
+    }
+  } catch (error) {
+    console.error("Erreur retrait rôle absent :", error.message);
+  }
+
+  try {
+    const currentName = member.nickname || member.user.username;
+
+    if (currentName.startsWith("[ABS] ")) {
+      await member.setNickname(currentName.replace("[ABS] ", ""));
+    } else if (currentName.startsWith("[ABS]")) {
+      await member.setNickname(currentName.replace("[ABS]", "").trim());
+    }
+  } catch (error) {
+    console.error("Erreur retrait [ABS] pseudo :", error.message);
+  }
+}
 function createServiceButtons() {
   return [
     new ActionRowBuilder().addComponents(
@@ -241,19 +294,19 @@ function createAbsenceButtons() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("absence_button_declare")
-        .setLabel("Déclarer une absence")
+        .setLabel("Déclarer")
         .setEmoji("🟢")
         .setStyle(ButtonStyle.Success),
 
       new ButtonBuilder()
         .setCustomId("absence_button_view")
-        .setLabel("Voir mon absence")
+        .setLabel("Voir")
         .setEmoji("🔎")
         .setStyle(ButtonStyle.Secondary),
 
       new ButtonBuilder()
         .setCustomId("absence_button_end")
-        .setLabel("Terminer mon absence")
+        .setLabel("Terminer")
         .setEmoji("🔴")
         .setStyle(ButtonStyle.Danger)
     )
@@ -262,22 +315,15 @@ function createAbsenceButtons() {
 
 function createAbsencePanelEmbed() {
   return new EmbedBuilder()
-    .setTitle("📅 ━━━ GESTION DES ABSENCES ━━━")
-    .setDescription(
-      `📋 **Déclaration des absences**\n\n` +
-      `Utilisez les boutons ci-dessous pour gérer votre absence.\n\n` +
-      `🟢 **Déclarer une absence**\n` +
-      `Permet d’annoncer une absence avec votre pseudo, votre entreprise, la durée et la raison.\n\n` +
-      `🔎 **Voir mon absence**\n` +
-      `Permet de consulter votre absence active en message privé/invisible.\n\n` +
-      `🔴 **Terminer mon absence**\n` +
-      `Permet de clôturer votre absence active.\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `📌 _Merci de déclarer uniquement les absences réelles ou utiles à l’organisation RP._`
+    .setTitle("📅 Absences")
+    .setDescription("Déclarez, consultez ou terminez votre absence avec les boutons ci-dessous.")
+    .addFields(
+      { name: "🟢 Déclarer", value: "Créer une absence RP.", inline: true },
+      { name: "🔎 Voir", value: "Consulter votre absence.", inline: true },
+      { name: "🔴 Terminer", value: "Clôturer votre absence.", inline: true }
     )
     .setColor(0x3498db)
-    .setFooter({ text: "Dumax FS25 • Gestion des absences" })
-    .setTimestamp();
+    .setFooter({ text: "Dumax FS25 • Gestion des absences" });
 }
 
 async function sendAbsencePanelAtBottom(channel) {
@@ -301,7 +347,7 @@ async function updateAbsencePanel() {
   const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
 
   if (!absencesPanelMessage) {
-    absencesPanelMessage = await fetchPanelMessage(channel, "GESTION DES ABSENCES");
+    absencesPanelMessage = await fetchPanelMessage(channel, "Absences");
 
     if (!absencesPanelMessage) {
       absencesPanelMessage = await channel.send({
@@ -401,7 +447,6 @@ async function updateEntreprises() {
 
   await entreprisesMessage.edit({ embeds: [embed] });
 }
-
 async function updateServices() {
   const enService = entreprises.filter(e => e.service === "🟢 En service");
   const horsService = entreprises.filter(e => e.service !== "🟢 En service");
@@ -500,6 +545,7 @@ function startServiceAlertLoop() {
     if (updated) saveData();
   }, 5 * 60 * 1000);
 }
+
 const commands = [
   {
     name: "sanction",
@@ -575,7 +621,7 @@ const commands = [
     description: "Installer ou remettre le panneau de gestion des absences",
     type: 1
   },
-  {
+    {
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
@@ -695,7 +741,7 @@ const commands = [
       }
     ]
   },
-    {
+  {
     name: "amende",
     description: "Émettre une amende RP à une entreprise",
     type: 1,
@@ -801,7 +847,6 @@ client.once("ready", async () => {
 
   startServiceAlertLoop();
 });
-
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
     const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -838,15 +883,13 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
-      const customId =
-        interaction.customId === "service_button_on"
-          ? "service_select_on"
-          : "service_select_off";
+      const customId = interaction.customId === "service_button_on"
+        ? "service_select_on"
+        : "service_select_off";
 
-      const placeholder =
-        interaction.customId === "service_button_on"
-          ? "Choisis l’entreprise à mettre en service"
-          : "Choisis l’entreprise à mettre hors service";
+      const placeholder = interaction.customId === "service_button_on"
+        ? "Choisis l’entreprise à mettre en service"
+        : "Choisis l’entreprise à mettre hors service";
 
       return interaction.reply({
         content: "🚜 Sélectionne l’entreprise concernée :",
@@ -979,20 +1022,23 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.customId === "absence_button_end") {
+      await interaction.deferReply({ ephemeral: true });
+
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
       );
 
       if (!activeAbsence) {
-        return interaction.reply({
-          content: "📭 Tu n’as aucune absence active à terminer.",
-          ephemeral: true
+        return interaction.editReply({
+          content: "📭 Tu n’as aucune absence active à terminer."
         });
       }
 
       activeAbsence.statut = "TERMINÉE";
       activeAbsence.dateFin = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+      await removeAbsenceStatus(interaction.member);
 
       saveData();
 
@@ -1013,16 +1059,16 @@ client.on("interactionCreate", async interaction => {
       await channel.send({ embeds: [embed] });
       await sendAbsencePanelAtBottom(channel);
 
-      return interaction.reply({
-        content: "✅ Ton absence a bien été terminée.",
-        ephemeral: true
+      return interaction.editReply({
+        content: "✅ Ton absence a bien été terminée. Le rôle absent et le préfixe `[ABS]` ont été retirés."
       });
     }
   }
-    if (interaction.isModalSubmit()) {
 
-    // ===== DECLARATION ABSENCE =====
+  if (interaction.isModalSubmit()) {
     if (interaction.customId === "absence_modal_declare") {
+      await interaction.deferReply({ ephemeral: true });
+
       const pseudo = interaction.fields.getTextInputValue("pseudo");
       const entreprise = interaction.fields.getTextInputValue("entreprise");
       const duree = interaction.fields.getTextInputValue("duree");
@@ -1039,6 +1085,8 @@ client.on("interactionCreate", async interaction => {
         date,
         statut: "ACTIVE"
       });
+
+      await applyAbsenceStatus(interaction.member);
 
       saveData();
 
@@ -1058,13 +1106,10 @@ client.on("interactionCreate", async interaction => {
         .setTimestamp();
 
       await channel.send({ embeds: [embed] });
-
-      // 👉 Remet le panel en bas automatiquement
       await sendAbsencePanelAtBottom(channel);
 
-      return interaction.reply({
-        content: "✅ Ton absence a été déclarée.",
-        ephemeral: true
+      return interaction.editReply({
+        content: "✅ Ton absence a été déclarée. Le rôle absent et le préfixe `[ABS]` ont été appliqués."
       });
     }
   }
@@ -1083,11 +1128,8 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
   }
 
-  // ===== SAY =====
   if (cmd === "say") {
     const raw = interaction.options.getString("message");
-
-    // gestion des retours ligne avec \n
     const message = raw.replace(/\\n/g, "\n");
 
     await interaction.channel.send({ content: message });
@@ -1098,28 +1140,26 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  // ===== NOM SERVEUR =====
   if (cmd === "nomserveur") {
     stats.nomServeur = interaction.options.getString("nom");
   }
 
-  // ===== MOT DE PASSE =====
   if (cmd === "mdp") {
     stats.mdpServeur = interaction.options.getString("motdepasse");
   }
 
-  // ===== PANEL ABSENCE =====
   if (cmd === "absencepanel") {
-    const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+    await interaction.deferReply({ ephemeral: true });
 
+    const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
     await sendAbsencePanelAtBottom(channel);
 
-    return interaction.reply({
-      content: "✅ Panel des absences installé.",
-      ephemeral: true
+    return interaction.editReply({
+      content: "✅ Panel des absences installé."
     });
   }
-    if (cmd === "sanction") {
+
+  if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
