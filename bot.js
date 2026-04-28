@@ -1,4 +1,14 @@
-const { Client, GatewayIntentBits, EmbedBuilder, Routes } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  Routes,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder
+} = require("discord.js");
+
 const { REST } = require("@discordjs/rest");
 const fs = require("fs");
 
@@ -149,6 +159,62 @@ async function fetchPanelMessage(channel, titlePart) {
     m.embeds[0]?.title?.includes(titlePart)
   );
 }
+
+function getMemberEntreprises(member) {
+  const staff = isStaff(member);
+
+  if (staff) {
+    return entreprises;
+  }
+
+  return entreprises.filter(e => {
+    if (!e.roleId) return false;
+    return member.roles.cache.has(e.roleId);
+  });
+}
+
+function createServiceButtons() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("service_button_on")
+        .setLabel("Prendre le service")
+        .setEmoji("🟢")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("service_button_off")
+        .setLabel("Quitter le service")
+        .setEmoji("🔴")
+        .setStyle(ButtonStyle.Danger),
+
+      new ButtonBuilder()
+        .setCustomId("service_button_view")
+        .setLabel("Voir les services")
+        .setEmoji("📋")
+        .setStyle(ButtonStyle.Secondary)
+    )
+  ];
+}
+
+function createServiceSelect(customId, list, placeholder) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(customId)
+        .setPlaceholder(placeholder)
+        .addOptions(
+          list.slice(0, 25).map(e => ({
+            label: e.nom.slice(0, 100),
+            description: e.service === "🟢 En service" ? "Actuellement en service" : "Actuellement hors service",
+            value: e.nom.slice(0, 100),
+            emoji: e.service === "🟢 En service" ? "🟢" : "🔴"
+          }))
+        )
+    )
+  ];
+}
+
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -237,25 +303,25 @@ async function updateServices() {
   const horsService = entreprises.filter(e => e.service !== "🟢 En service");
 
   const blocEnService = enService.length
-    ? enService.map(e => `${e.nom}`).join("\n")
+    ? enService.map(e => `**${e.nom}**`).join("\n")
     : "_Aucune entreprise en service_";
 
   const blocHorsService = horsService.length
-    ? horsService.map(e => `${e.nom}`).join("\n")
+    ? horsService.map(e => `**${e.nom}**`).join("\n")
     : "_Aucune entreprise hors service_";
 
   const description =
     `🚜 **Tableau de service des entreprises**\n\n` +
-    `🟢 **EN SERVICE**\n` +
+    `🟢 **EN SERVICE (${enService.length})**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `${blocEnService}\n\n` +
-    `🔴 **HORS SERVICE**\n` +
+    `🔴 **HORS SERVICE (${horsService.length})**\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `${blocHorsService}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `📘 **UTILISATION**\n` +
-    `• \`/service\` → Prendre ou quitter le service\n` +
-    `• Les membres du staff peuvent retirer un service si nécessaire\n\n` +
+    `• Utilisez les boutons ci-dessous pour prendre ou quitter le service\n` +
+    `• Le staff peut intervenir si nécessaire\n\n` +
     `📌 _Pensez à quitter le service en fin de session._`;
 
   const embed = new EmbedBuilder()
@@ -271,14 +337,19 @@ async function updateServices() {
     servicesMessage = await fetchPanelMessage(channel, "ENTREPRISES EN SERVICES");
 
     if (!servicesMessage) {
-      servicesMessage = await channel.send({ embeds: [embed] });
+      servicesMessage = await channel.send({
+        embeds: [embed],
+        components: createServiceButtons()
+      });
       return;
     }
   }
 
-  await servicesMessage.edit({ embeds: [embed] });
+  await servicesMessage.edit({
+    embeds: [embed],
+    components: createServiceButtons()
+  });
 }
-
 async function getServiceRoleMention(guild) {
   await guild.roles.fetch();
   const role = guild.roles.cache.find(r => r.name === SERVICE_ROLE_NAME);
@@ -324,6 +395,7 @@ function startServiceAlertLoop() {
     if (updated) saveData();
   }, 5 * 60 * 1000);
 }
+
 const commands = [
   {
     name: "sanction",
@@ -592,6 +664,142 @@ client.on("interactionCreate", async interaction => {
       .map(e => ({ name: e.nom, value: e.nom }));
 
     return interaction.respond(choices);
+  }
+
+  if (interaction.isButton()) {
+    const staff = isStaff(interaction.member);
+    const serviceAllowed = isServiceAllowed(interaction.member);
+
+    if (
+      interaction.customId === "service_button_on" ||
+      interaction.customId === "service_button_off"
+    ) {
+      if (!staff && !serviceAllowed) {
+        return interaction.reply({
+          content: "⛔ Permission refusée.",
+          ephemeral: true
+        });
+      }
+
+      const userEntreprises = getMemberEntreprises(interaction.member);
+
+      if (!userEntreprises.length) {
+        return interaction.reply({
+          content: "❌ Aucune entreprise liée à ton rôle.",
+          ephemeral: true
+        });
+      }
+
+      const customId =
+        interaction.customId === "service_button_on"
+          ? "service_select_on"
+          : "service_select_off";
+
+      const placeholder =
+        interaction.customId === "service_button_on"
+          ? "Choisis l’entreprise à mettre en service"
+          : "Choisis l’entreprise à mettre hors service";
+
+      return interaction.reply({
+        content: "🚜 Sélectionne l’entreprise concernée :",
+        components: createServiceSelect(customId, userEntreprises, placeholder),
+        ephemeral: true
+      });
+    }
+
+    if (interaction.customId === "service_button_view") {
+      const enService = entreprises.filter(e => e.service === "🟢 En service");
+      const horsService = entreprises.filter(e => e.service !== "🟢 En service");
+
+      const blocEnService = enService.length
+        ? enService.map(e => `**${e.nom}**`).join("\n")
+        : "_Aucune entreprise en service_";
+
+      const blocHorsService = horsService.length
+        ? horsService.map(e => `**${e.nom}**`).join("\n")
+        : "_Aucune entreprise hors service_";
+
+      const embed = new EmbedBuilder()
+        .setTitle("📋 État actuel des services")
+        .setDescription(
+          `🟢 **EN SERVICE (${enService.length})**\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `${blocEnService}\n\n` +
+          `🔴 **HORS SERVICE (${horsService.length})**\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `${blocHorsService}`
+        )
+        .setColor(enService.length > 0 ? 0x2ecc71 : 0xe74c3c)
+        .setFooter({ text: "Dumax FS25 • Consultation service" })
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    const staff = isStaff(interaction.member);
+    const serviceAllowed = isServiceAllowed(interaction.member);
+
+    if (
+      interaction.customId === "service_select_on" ||
+      interaction.customId === "service_select_off"
+    ) {
+      if (!staff && !serviceAllowed) {
+        return interaction.reply({
+          content: "⛔ Permission refusée.",
+          ephemeral: true
+        });
+      }
+
+      const nom = interaction.values[0];
+      const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+      if (!entreprise) {
+        return interaction.reply({
+          content: "❌ Entreprise introuvable.",
+          ephemeral: true
+        });
+      }
+
+      if (!staff) {
+        if (!entreprise.roleId) {
+          return interaction.reply({
+            content: "⛔ Aucun rôle Discord n’est lié à cette entreprise.",
+            ephemeral: true
+          });
+        }
+
+        if (!interaction.member.roles.cache.has(entreprise.roleId)) {
+          return interaction.reply({
+            content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
+            ephemeral: true
+          });
+        }
+      }
+
+      if (interaction.customId === "service_select_on") {
+        entreprise.service = "🟢 En service";
+        entreprise.serviceStart = Date.now();
+        entreprise.alertSent = false;
+      } else {
+        entreprise.service = "🔴 Hors service";
+        entreprise.serviceStart = null;
+        entreprise.alertSent = false;
+      }
+
+      saveData();
+      await updateServices();
+      await updateEntreprises();
+
+      return interaction.reply({
+        content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
+        ephemeral: true
+      });
+    }
   }
 
   if (!interaction.isChatInputCommand()) return;
@@ -929,7 +1137,8 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-    if (cmd === "amende") {
+
+  if (cmd === "amende") {
     const nom = interaction.options.getString("entreprise");
     const montant = interaction.options.getString("montant");
     const motif = interaction.options.getString("motif");
