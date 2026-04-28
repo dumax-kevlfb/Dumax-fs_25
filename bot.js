@@ -196,7 +196,6 @@ function createServiceButtons() {
     )
   ];
 }
-
 function createServiceSelect(customId, list, placeholder) {
   return [
     new ActionRowBuilder().addComponents(
@@ -350,6 +349,7 @@ async function updateServices() {
     components: createServiceButtons()
   });
 }
+
 async function getServiceRoleMention(guild) {
   await guild.roles.fetch();
   const role = guild.roles.cache.find(r => r.name === SERVICE_ROLE_NAME);
@@ -438,6 +438,19 @@ const commands = [
     ]
   },
   {
+    name: "say",
+    description: "Faire parler le bot dans le salon actuel",
+    type: 1,
+    options: [
+      {
+        name: "message",
+        description: "Message à envoyer avec le bot. Utilise \\n pour faire un retour à la ligne.",
+        type: 3,
+        required: true
+      }
+    ]
+  },
+  {
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
@@ -476,7 +489,7 @@ const commands = [
     description: "Mettre à jour les panels",
     type: 1
   },
-  {
+    {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
     type: 1,
@@ -654,6 +667,7 @@ client.once("ready", async () => {
 
   startServiceAlertLoop();
 });
+
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
     const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -801,8 +815,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-
-  if (!interaction.isChatInputCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
   const staff = isStaff(interaction.member);
@@ -814,6 +827,28 @@ client.on("interactionCreate", async interaction => {
     }
   } else if (!staff) {
     return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
+  }
+
+  if (cmd === "say") {
+    const message = interaction.options.getString("message");
+
+    if (!message || message.length < 1) {
+      return interaction.reply({
+        content: "❌ Message invalide.",
+        ephemeral: true
+      });
+    }
+
+    const formattedMessage = message.replace(/\\n/g, "\n");
+
+    await interaction.channel.send({
+      content: formattedMessage
+    });
+
+    return interaction.reply({
+      content: "✅ Message envoyé via le bot.",
+      ephemeral: true
+    });
   }
 
   if (cmd === "sanction") {
