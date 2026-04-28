@@ -1064,7 +1064,60 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
+if (interaction.isStringSelectMenu()) {
+  if (
+    interaction.customId === "service_select_on" ||
+    interaction.customId === "service_select_off"
+  ) {
+    const staff = isStaff(interaction.member);
+    const serviceAllowed = isServiceAllowed(interaction.member);
 
+    if (!staff && !serviceAllowed) {
+      return interaction.reply({
+        content: "⛔ Permission refusée.",
+        ephemeral: true
+      });
+    }
+
+    const nom = interaction.values[0];
+    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+    if (!entreprise) {
+      return interaction.reply({
+        content: "❌ Entreprise introuvable.",
+        ephemeral: true
+      });
+    }
+
+    if (!staff) {
+      if (!entreprise.roleId || !interaction.member.roles.cache.has(entreprise.roleId)) {
+        return interaction.reply({
+          content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
+          ephemeral: true
+        });
+      }
+    }
+
+    if (interaction.customId === "service_select_on") {
+      entreprise.service = "🟢 En service";
+      entreprise.serviceStart = Date.now();
+      entreprise.alertSent = false;
+    } else {
+      entreprise.service = "🔴 Hors service";
+      entreprise.serviceStart = null;
+      entreprise.alertSent = false;
+    }
+
+    saveData();
+    await updateServices();
+    await updateEntreprises();
+
+    return interaction.update({
+      content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
+      components: []
+    });
+  }
+}
   if (interaction.isModalSubmit()) {
     if (interaction.customId === "absence_modal_declare") {
       await interaction.deferReply({ ephemeral: true });
