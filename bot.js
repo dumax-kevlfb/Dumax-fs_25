@@ -6,7 +6,10 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 
 const { REST } = require("@discordjs/rest");
@@ -22,8 +25,9 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const AMENDES_CHANNEL_ID = "1498021850054266980";
 const ENTREPRISES_CHANNEL_ID = "1498040049533456556";
-const SERVICES_CHANNEL_ID = "1498047350818738176";
+const SERVICES_CHANNEL_ID = "1498067350818738176";
 const PRIMES_CHANNEL_ID = "1498064143394148502";
+const ABSENCES_CHANNEL_ID = "1498597445758746664";
 
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
 const SERVICE_ROLE_NAME = "━━━ 🚜 ENTREPRISES AGRICOLES ━━━";
@@ -35,6 +39,7 @@ const ENTREPRISES_FILE = "./entreprises.json";
 const AMENDES_FILE = "./amendes.json";
 const PRIMES_FILE = "./primes.json";
 const SANCTIONS_FILE = "./sanctions.json";
+const ABSENCES_FILE = "./absences.json";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -42,17 +47,21 @@ let stats = {
   fermesTotales: "0",
   fermesReprises: "0",
   mods: "0",
-  statut: "🟠 En développement (staff only)"
+  statut: "🟠 En développement (staff only)",
+  nomServeur: "Non renseigné",
+  mdpServeur: "Non renseigné"
 };
 
 let entreprises = [];
 let amendes = [];
 let primes = [];
 let sanctions = [];
+let absences = [];
 
 let panelMessage = null;
 let entreprisesMessage = null;
 let servicesMessage = null;
+let absencesPanelMessage = null;
 let serviceAlertIntervalStarted = false;
 
 function isStaff(member) {
@@ -71,6 +80,18 @@ function loadData() {
   if (fs.existsSync(AMENDES_FILE)) amendes = JSON.parse(fs.readFileSync(AMENDES_FILE, "utf8"));
   if (fs.existsSync(PRIMES_FILE)) primes = JSON.parse(fs.readFileSync(PRIMES_FILE, "utf8"));
   if (fs.existsSync(SANCTIONS_FILE)) sanctions = JSON.parse(fs.readFileSync(SANCTIONS_FILE, "utf8"));
+  if (fs.existsSync(ABSENCES_FILE)) absences = JSON.parse(fs.readFileSync(ABSENCES_FILE, "utf8"));
+
+  stats = {
+    fermesTotales: stats.fermesTotales || "0",
+    fermesReprises: stats.fermesReprises || "0",
+    mods: stats.mods || "0",
+    statut: stats.statut || "🟠 En développement (staff only)",
+    nomServeur: stats.nomServeur || "Non renseigné",
+    mdpServeur: stats.mdpServeur || "Non renseigné"
+  };
+
+  if (!Array.isArray(absences)) absences = [];
 }
 
 function saveData() {
@@ -79,6 +100,7 @@ function saveData() {
   fs.writeFileSync(AMENDES_FILE, JSON.stringify(amendes, null, 2));
   fs.writeFileSync(PRIMES_FILE, JSON.stringify(primes, null, 2));
   fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
+  fs.writeFileSync(ABSENCES_FILE, JSON.stringify(absences, null, 2));
 }
 
 function getNextSanctionNumber() {
@@ -105,7 +127,6 @@ function addSanctionHistory({ type, member, userTag, motif, duree, staff }) {
 
   saveData();
 }
-
 function parseAmount(value) {
   const cleaned = String(value)
     .replace(/\s/g, "")
@@ -196,6 +217,7 @@ function createServiceButtons() {
     )
   ];
 }
+
 function createServiceSelect(customId, list, placeholder) {
   return [
     new ActionRowBuilder().addComponents(
@@ -214,6 +236,87 @@ function createServiceSelect(customId, list, placeholder) {
   ];
 }
 
+function createAbsenceButtons() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("absence_button_declare")
+        .setLabel("Déclarer une absence")
+        .setEmoji("🟢")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId("absence_button_view")
+        .setLabel("Voir mon absence")
+        .setEmoji("🔎")
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId("absence_button_end")
+        .setLabel("Terminer mon absence")
+        .setEmoji("🔴")
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
+}
+
+function createAbsencePanelEmbed() {
+  return new EmbedBuilder()
+    .setTitle("📅 ━━━ GESTION DES ABSENCES ━━━")
+    .setDescription(
+      `📋 **Déclaration des absences**\n\n` +
+      `Utilisez les boutons ci-dessous pour gérer votre absence.\n\n` +
+      `🟢 **Déclarer une absence**\n` +
+      `Permet d’annoncer une absence avec votre pseudo, votre entreprise, la durée et la raison.\n\n` +
+      `🔎 **Voir mon absence**\n` +
+      `Permet de consulter votre absence active en message privé/invisible.\n\n` +
+      `🔴 **Terminer mon absence**\n` +
+      `Permet de clôturer votre absence active.\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `📌 _Merci de déclarer uniquement les absences réelles ou utiles à l’organisation RP._`
+    )
+    .setColor(0x3498db)
+    .setFooter({ text: "Dumax FS25 • Gestion des absences" })
+    .setTimestamp();
+}
+
+async function sendAbsencePanelAtBottom(channel) {
+  if (absencesPanelMessage) {
+    try {
+      await absencesPanelMessage.delete();
+    } catch (error) {
+      console.error("Impossible de supprimer l’ancien panel absence :", error.message);
+    }
+  }
+
+  absencesPanelMessage = await channel.send({
+    embeds: [createAbsencePanelEmbed()],
+    components: createAbsenceButtons()
+  });
+
+  return absencesPanelMessage;
+}
+
+async function updateAbsencePanel() {
+  const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+
+  if (!absencesPanelMessage) {
+    absencesPanelMessage = await fetchPanelMessage(channel, "GESTION DES ABSENCES");
+
+    if (!absencesPanelMessage) {
+      absencesPanelMessage = await channel.send({
+        embeds: [createAbsencePanelEmbed()],
+        components: createAbsenceButtons()
+      });
+      return;
+    }
+  }
+
+  await absencesPanelMessage.edit({
+    embeds: [createAbsencePanelEmbed()],
+    components: createAbsenceButtons()
+  });
+}
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -224,6 +327,8 @@ async function updatePanel() {
     )
     .addFields(
       { name: "📡 STATUT DU SERVEUR", value: `\`\`\`${stats.statut}\`\`\``, inline: false },
+      { name: "🖥️ NOM DU SERVEUR", value: `\`\`\`${stats.nomServeur || "Non renseigné"}\`\`\``, inline: false },
+      { name: "🔐 MOT DE PASSE", value: `\`\`\`${stats.mdpServeur || "Non renseigné"}\`\`\``, inline: false },
       { name: "🏡 FERMES TOTALES", value: `\`\`\`${stats.fermesTotales}\`\`\``, inline: true },
       { name: "✅ FERMES REPRISES", value: `\`\`\`${stats.fermesReprises}\`\`\``, inline: true },
       { name: "🧩 MODS INSTALLÉS", value: `\`\`\`${stats.mods}\`\`\``, inline: true },
@@ -395,7 +500,6 @@ function startServiceAlertLoop() {
     if (updated) saveData();
   }, 5 * 60 * 1000);
 }
-
 const commands = [
   {
     name: "sanction",
@@ -451,6 +555,27 @@ const commands = [
     ]
   },
   {
+    name: "nomserveur",
+    description: "Définir le nom du serveur FS25",
+    type: 1,
+    options: [
+      { name: "nom", description: "Nom du serveur", type: 3, required: true }
+    ]
+  },
+  {
+    name: "mdp",
+    description: "Définir le mot de passe du serveur FS25",
+    type: 1,
+    options: [
+      { name: "motdepasse", description: "Mot de passe du serveur", type: 3, required: true }
+    ]
+  },
+  {
+    name: "absencepanel",
+    description: "Installer ou remettre le panneau de gestion des absences",
+    type: 1
+  },
+  {
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
@@ -489,7 +614,7 @@ const commands = [
     description: "Mettre à jour les panels",
     type: 1
   },
-    {
+  {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
     type: 1,
@@ -570,7 +695,7 @@ const commands = [
       }
     ]
   },
-  {
+    {
     name: "amende",
     description: "Émettre une amende RP à une entreprise",
     type: 1,
@@ -658,12 +783,21 @@ client.once("ready", async () => {
     statut: p.statut || "ACTIVE"
   }));
 
+  absences = absences.map(a => ({
+    ...a,
+    statut: a.statut || "ACTIVE"
+  }));
+
   saveData();
 
   await registerCommands();
   await updatePanel();
   await updateEntreprises();
   await updateServices();
+
+  if (ABSENCES_CHANNEL_ID !== "ID_DU_SALON_ABSENCE") {
+    await updateAbsencePanel();
+  }
 
   startServiceAlertLoop();
 });
@@ -752,70 +886,190 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-  }
 
-  if (interaction.isStringSelectMenu()) {
-    const staff = isStaff(interaction.member);
-    const serviceAllowed = isServiceAllowed(interaction.member);
+    if (interaction.customId === "absence_button_declare") {
+      const activeAbsence = absences.find(a =>
+        a.userId === interaction.user.id &&
+        a.statut === "ACTIVE"
+      );
 
-    if (
-      interaction.customId === "service_select_on" ||
-      interaction.customId === "service_select_off"
-    ) {
-      if (!staff && !serviceAllowed) {
+      if (activeAbsence) {
         return interaction.reply({
-          content: "⛔ Permission refusée.",
+          content: "⚠️ Tu as déjà une absence active. Termine ton absence actuelle avant d’en déclarer une nouvelle.",
           ephemeral: true
         });
       }
 
-      const nom = interaction.values[0];
-      const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+      const modal = new ModalBuilder()
+        .setCustomId("absence_modal_declare")
+        .setTitle("Déclarer une absence");
 
-      if (!entreprise) {
+      const pseudoInput = new TextInputBuilder()
+        .setCustomId("pseudo")
+        .setLabel("Pseudo")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Exemple : Jean Dupont")
+        .setRequired(true)
+        .setMaxLength(100);
+
+      const entrepriseInput = new TextInputBuilder()
+        .setCustomId("entreprise")
+        .setLabel("Entreprise de rattachement")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Exemple : ETA de Pallegney")
+        .setRequired(true)
+        .setMaxLength(100);
+
+      const dureeInput = new TextInputBuilder()
+        .setCustomId("duree")
+        .setLabel("Durée de l’absence")
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder("Exemple : 3 jours / 1 semaine / jusqu’au 15 mai")
+        .setRequired(true)
+        .setMaxLength(100);
+
+      const raisonInput = new TextInputBuilder()
+        .setCustomId("raison")
+        .setLabel("Raison")
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder("Explique brièvement la raison de ton absence")
+        .setRequired(true)
+        .setMaxLength(1000);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(pseudoInput),
+        new ActionRowBuilder().addComponents(entrepriseInput),
+        new ActionRowBuilder().addComponents(dureeInput),
+        new ActionRowBuilder().addComponents(raisonInput)
+      );
+
+      return interaction.showModal(modal);
+    }
+
+    if (interaction.customId === "absence_button_view") {
+      const activeAbsence = absences.find(a =>
+        a.userId === interaction.user.id &&
+        a.statut === "ACTIVE"
+      );
+
+      if (!activeAbsence) {
         return interaction.reply({
-          content: "❌ Entreprise introuvable.",
+          content: "📭 Tu n’as aucune absence active.",
           ephemeral: true
         });
       }
 
-      if (!staff) {
-        if (!entreprise.roleId) {
-          return interaction.reply({
-            content: "⛔ Aucun rôle Discord n’est lié à cette entreprise.",
-            ephemeral: true
-          });
-        }
-
-        if (!interaction.member.roles.cache.has(entreprise.roleId)) {
-          return interaction.reply({
-            content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
-            ephemeral: true
-          });
-        }
-      }
-
-      if (interaction.customId === "service_select_on") {
-        entreprise.service = "🟢 En service";
-        entreprise.serviceStart = Date.now();
-        entreprise.alertSent = false;
-      } else {
-        entreprise.service = "🔴 Hors service";
-        entreprise.serviceStart = null;
-        entreprise.alertSent = false;
-      }
-
-      saveData();
-      await updateServices();
-      await updateEntreprises();
+      const embed = new EmbedBuilder()
+        .setTitle("🔎 Ton absence active")
+        .setDescription(
+          `👤 **Pseudo :** ${activeAbsence.pseudo}\n` +
+          `🏢 **Entreprise :** ${activeAbsence.entreprise}\n` +
+          `⏱️ **Durée :** ${activeAbsence.duree}\n` +
+          `📝 **Raison :** ${activeAbsence.raison}\n` +
+          `📅 **Déclarée le :** ${activeAbsence.date}`
+        )
+        .setColor(0x3498db)
+        .setFooter({ text: "Dumax FS25 • Consultation absence" })
+        .setTimestamp();
 
       return interaction.reply({
-        content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
+        embeds: [embed],
+        ephemeral: true
+      });
+    }
+
+    if (interaction.customId === "absence_button_end") {
+      const activeAbsence = absences.find(a =>
+        a.userId === interaction.user.id &&
+        a.statut === "ACTIVE"
+      );
+
+      if (!activeAbsence) {
+        return interaction.reply({
+          content: "📭 Tu n’as aucune absence active à terminer.",
+          ephemeral: true
+        });
+      }
+
+      activeAbsence.statut = "TERMINÉE";
+      activeAbsence.dateFin = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+      saveData();
+
+      const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+
+      const embed = new EmbedBuilder()
+        .setTitle("✅ Absence terminée")
+        .setDescription(
+          `👤 **Pseudo :** ${activeAbsence.pseudo}\n` +
+          `🏢 **Entreprise :** ${activeAbsence.entreprise}\n` +
+          `📅 **Déclarée le :** ${activeAbsence.date}\n` +
+          `✅ **Terminée le :** ${activeAbsence.dateFin}`
+        )
+        .setColor(0x2ecc71)
+        .setFooter({ text: "Dumax FS25 • Fin d’absence" })
+        .setTimestamp();
+
+      await channel.send({ embeds: [embed] });
+      await sendAbsencePanelAtBottom(channel);
+
+      return interaction.reply({
+        content: "✅ Ton absence a bien été terminée.",
         ephemeral: true
       });
     }
   }
-    if (!interaction.isChatInputCommand()) return;
+    if (interaction.isModalSubmit()) {
+
+    // ===== DECLARATION ABSENCE =====
+    if (interaction.customId === "absence_modal_declare") {
+      const pseudo = interaction.fields.getTextInputValue("pseudo");
+      const entreprise = interaction.fields.getTextInputValue("entreprise");
+      const duree = interaction.fields.getTextInputValue("duree");
+      const raison = interaction.fields.getTextInputValue("raison");
+
+      const date = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+
+      absences.push({
+        userId: interaction.user.id,
+        pseudo,
+        entreprise,
+        duree,
+        raison,
+        date,
+        statut: "ACTIVE"
+      });
+
+      saveData();
+
+      const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+
+      const embed = new EmbedBuilder()
+        .setTitle("📋 Nouvelle absence déclarée")
+        .setDescription(
+          `👤 **Pseudo :** ${pseudo}\n` +
+          `🏢 **Entreprise :** ${entreprise}\n` +
+          `⏱️ **Durée :** ${duree}\n` +
+          `📝 **Raison :** ${raison}\n` +
+          `📅 **Déclarée le :** ${date}`
+        )
+        .setColor(0xe67e22)
+        .setFooter({ text: "Dumax FS25 • Déclaration d’absence" })
+        .setTimestamp();
+
+      await channel.send({ embeds: [embed] });
+
+      // 👉 Remet le panel en bas automatiquement
+      await sendAbsencePanelAtBottom(channel);
+
+      return interaction.reply({
+        content: "✅ Ton absence a été déclarée.",
+        ephemeral: true
+      });
+    }
+  }
+
+  if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
   const staff = isStaff(interaction.member);
@@ -829,29 +1083,43 @@ client.on("interactionCreate", async interaction => {
     return interaction.reply({ content: "⛔ Permission refusée.", ephemeral: true });
   }
 
+  // ===== SAY =====
   if (cmd === "say") {
-    const message = interaction.options.getString("message");
+    const raw = interaction.options.getString("message");
 
-    if (!message || message.length < 1) {
-      return interaction.reply({
-        content: "❌ Message invalide.",
-        ephemeral: true
-      });
-    }
+    // gestion des retours ligne avec \n
+    const message = raw.replace(/\\n/g, "\n");
 
-    const formattedMessage = message.replace(/\\n/g, "\n");
-
-    await interaction.channel.send({
-      content: formattedMessage
-    });
+    await interaction.channel.send({ content: message });
 
     return interaction.reply({
-      content: "✅ Message envoyé via le bot.",
+      content: "✅ Message envoyé.",
       ephemeral: true
     });
   }
 
-  if (cmd === "sanction") {
+  // ===== NOM SERVEUR =====
+  if (cmd === "nomserveur") {
+    stats.nomServeur = interaction.options.getString("nom");
+  }
+
+  // ===== MOT DE PASSE =====
+  if (cmd === "mdp") {
+    stats.mdpServeur = interaction.options.getString("motdepasse");
+  }
+
+  // ===== PANEL ABSENCE =====
+  if (cmd === "absencepanel") {
+    const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+
+    await sendAbsencePanelAtBottom(channel);
+
+    return interaction.reply({
+      content: "✅ Panel des absences installé.",
+      ephemeral: true
+    });
+  }
+    if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
@@ -1445,6 +1713,10 @@ client.on("interactionCreate", async interaction => {
     await updateEntreprises();
     await updateServices();
 
+    if (ABSENCES_CHANNEL_ID !== "ID_DU_SALON_ABSENCE") {
+      await updateAbsencePanel();
+    }
+
     return interaction.reply({ content: "✅ Panels mis à jour.", ephemeral: true });
   }
 
@@ -1452,6 +1724,10 @@ client.on("interactionCreate", async interaction => {
   await updatePanel();
   await updateEntreprises();
   await updateServices();
+
+  if (ABSENCES_CHANNEL_ID !== "ID_DU_SALON_ABSENCE") {
+    await updateAbsencePanel();
+  }
 
   return interaction.reply({ content: "✅ Mise à jour effectuée.", ephemeral: true });
 });
