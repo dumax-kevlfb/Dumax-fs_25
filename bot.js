@@ -14,6 +14,8 @@ const {
 
 const { REST } = require("@discordjs/rest");
 const fs = require("fs");
+const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const xml2js = require("xml2js");
 
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
@@ -29,6 +31,10 @@ const SERVICES_CHANNEL_ID = "1498067350818738176";
 const PRIMES_CHANNEL_ID = "1498064143394148502";
 const ABSENCES_CHANNEL_ID = "1498597445758746664";
 const ABSENT_ROLE_ID = "1498607458187350017";
+
+const XML_CHANNEL_ID = "1498925367443066930";
+const VERYGAMES_XML_URL = "http://si-12625.dg.vg:8080/feed/dedicated-server-stats.xml?code=6bqwp6ka35e99sng7izc3gly1r2h";
+const XML_REFRESH_INTERVAL = 60 * 1000;
 
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
 const SERVICE_ROLE_NAME = "━━━ 🚜 ENTREPRISES AGRICOLES ━━━";
@@ -68,7 +74,10 @@ let panelMessage = null;
 let entreprisesMessage = null;
 let servicesMessage = null;
 let absencesPanelMessage = null;
+let xmlPanelMessage = null;
+let lastXmlPlayers = [];
 let serviceAlertIntervalStarted = false;
+let veryGamesXmlIntervalStarted = false;
 
 function isStaff(member) {
   if (!member || !member.roles) return false;
@@ -363,6 +372,148 @@ async function updateAbsencePanel() {
     components: createAbsenceButtons()
   });
 }
+
+/* ================================
+   🔥 NOUVEAU : PANEL VERYGAMES XML
+================================ */
+
+function createXmlEmbed(players, maxPlayers) {
+  return new EmbedBuilder()
+    .setTitle("🖥️ État du serveur Farming")
+    .setDescription(
+      `👥 Joueurs en ligne : **${players.length}/${maxPlayers}**\n\n` +
+      (players.length
+        ? players.map(p => `• ${p}`).join("\n")
+        : "_Aucun joueur connecté_")
+    )
+    .setColor(players.length > 0 ? 0x2ecc71 : 0xe74c3c)
+    .setFooter({ text: "Dumax FS25 • Monitoring serveur" })
+    .setTimestamp();
+}
+
+async function updateXmlPanel(players, maxPlayers) {
+  const channel = await client.channels.fetch(XML_CHANNEL_ID);
+
+  if (!xmlPanelMessage) {
+    xmlPanelMessage = await fetchPanelMessage(channel, "État du serveur Farming");
+
+    if (!xmlPanelMessage) {
+      xmlPanelMessage = await channel.send({
+        embeds: [createXmlEmbed(players, maxPlayers)]
+      });
+      return;
+    }
+  }
+
+  await xmlPanelMessage.edit({
+    embeds: [createXmlEmbed(players, maxPlayers)]
+  });
+}
+function extractXmlData(result) {
+  const json = JSON.stringify(result);
+
+  const players = [];
+
+  function scan(obj) {
+    if (!obj || typeof obj !== "object") return;
+
+    if (Array.isArray(obj)) {
+      for (const item of obj) scan(item);
+      return;
+    }
+
+    if (obj.$) {
+      const possibleName =
+        obj.$.name ||
+        obj.$.playerName ||
+        obj.$.nickname ||
+        obj.$.username;
+
+      if (possibleName && !players.includes(possibleName)) {
+        players.push(possibleName);
+      }
+    }
+
+    for (const key of Object.keys(obj)) {
+      scan(obj[key]);
+    }
+  }
+
+  scan(result);
+
+  let maxPlayers = "?";
+
+  const maxMatch =
+    json.match(/"maxPlayers":\["?(\d+)"?\]/i) ||
+    json.match(/"slots":\["?(\d+)"?\]/i) ||
+    json.match(/"capacity":\["?(\d+)"?\]/i);
+
+  if (maxMatch) maxPlayers = maxMatch[1];
+
+  return {
+    players,
+    maxPlayers
+  };
+}
+
+async function fetchVeryGamesXmlData() {
+  const response = await fetch(VERYGAMES_XML_URL);
+
+  if (!response.ok) {
+    throw new Error(`Erreur HTTP XML : ${response.status}`);
+  }
+
+  const xml = await response.text();
+  const result = await xml2js.parseStringPromise(xml);
+
+  return extractXmlData(result);
+}
+
+async function refreshVeryGamesXml(sendLogs = false) {
+  if (
+    XML_CHANNEL_ID === "METTRE_ID_DU_SALON_XML_ICI" ||
+    VERYGAMES_XML_URL === "METTRE_LIEN_XML_VERYGAMES_ICI"
+  ) {
+    console.log("⚠️ Monitoring XML non configuré : XML_CHANNEL_ID ou VERYGAMES_XML_URL manquant.");
+    return;
+  }
+
+  try {
+    const { players, maxPlayers } = await fetchVeryGamesXmlData();
+    const channel = await client.channels.fetch(XML_CHANNEL_ID);
+
+    await updateXmlPanel(players, maxPlayers);
+
+    if (sendLogs) {
+      const joined = players.filter(p => !lastXmlPlayers.includes(p));
+      const left = lastXmlPlayers.filter(p => !players.includes(p));
+
+      for (const player of joined) {
+        await channel.send(`🟢 **${player}** vient de se connecter au serveur.`);
+      }
+
+      for (const player of left) {
+        await channel.send(`🔴 **${player}** vient de quitter le serveur.`);
+      }
+    }
+
+    lastXmlPlayers = players;
+  } catch (error) {
+    console.error("Erreur monitoring XML VeryGames :", error.message);
+  }
+}
+
+function startVeryGamesXmlLoop() {
+  if (veryGamesXmlIntervalStarted) return;
+  veryGamesXmlIntervalStarted = true;
+
+  refreshVeryGamesXml(false);
+
+  setInterval(async () => {
+    await refreshVeryGamesXml(true);
+  }, XML_REFRESH_INTERVAL);
+}
+
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -621,7 +772,12 @@ const commands = [
     description: "Installer ou remettre le panneau de gestion des absences",
     type: 1
   },
-    {
+  {
+    name: "serveur-xml-maj",
+    description: "Forcer la mise à jour du panel serveur XML",
+    type: 1
+  },
+  {
     name: "statut",
     description: "Changer le statut du serveur",
     type: 1,
@@ -637,7 +793,7 @@ const commands = [
       ]
     }]
   },
-  {
+    {
     name: "fermestotales",
     description: "Définir le nombre de fermes totales",
     type: 1,
@@ -846,6 +1002,7 @@ client.once("ready", async () => {
   }
 
   startServiceAlertLoop();
+  startVeryGamesXmlLoop();
 });
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
@@ -1022,16 +1179,15 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.customId === "absence_button_end") {
-      await interaction.deferReply({ ephemeral: true });
-
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
       );
 
       if (!activeAbsence) {
-        return interaction.editReply({
-          content: "📭 Tu n’as aucune absence active à terminer."
+        return interaction.reply({
+          content: "📭 Tu n’as aucune absence active à terminer.",
+          ephemeral: true
         });
       }
 
@@ -1059,69 +1215,70 @@ client.on("interactionCreate", async interaction => {
       await channel.send({ embeds: [embed] });
       await sendAbsencePanelAtBottom(channel);
 
-      return interaction.editReply({
-        content: "✅ Ton absence a bien été terminée. Le rôle absent et le préfixe `[ABS]` ont été retirés."
+      return interaction.reply({
+        content: "✅ Ton absence a bien été terminée. Le rôle absent et le préfixe `[ABS]` ont été retirés.",
+        ephemeral: true
       });
     }
   }
-if (interaction.isStringSelectMenu()) {
-  if (
-    interaction.customId === "service_select_on" ||
-    interaction.customId === "service_select_off"
-  ) {
-    const staff = isStaff(interaction.member);
-    const serviceAllowed = isServiceAllowed(interaction.member);
 
-    if (!staff && !serviceAllowed) {
-      return interaction.reply({
-        content: "⛔ Permission refusée.",
-        ephemeral: true
-      });
-    }
+  if (interaction.isStringSelectMenu()) {
+    if (
+      interaction.customId === "service_select_on" ||
+      interaction.customId === "service_select_off"
+    ) {
+      const staff = isStaff(interaction.member);
+      const serviceAllowed = isServiceAllowed(interaction.member);
 
-    const nom = interaction.values[0];
-    const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
-
-    if (!entreprise) {
-      return interaction.reply({
-        content: "❌ Entreprise introuvable.",
-        ephemeral: true
-      });
-    }
-
-    if (!staff) {
-      if (!entreprise.roleId || !interaction.member.roles.cache.has(entreprise.roleId)) {
+      if (!staff && !serviceAllowed) {
         return interaction.reply({
-          content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
+          content: "⛔ Permission refusée.",
           ephemeral: true
         });
       }
+
+      const nom = interaction.values[0];
+      const entreprise = entreprises.find(e => e.nom.toLowerCase() === nom.toLowerCase());
+
+      if (!entreprise) {
+        return interaction.reply({
+          content: "❌ Entreprise introuvable.",
+          ephemeral: true
+        });
+      }
+
+      if (!staff) {
+        if (!entreprise.roleId || !interaction.member.roles.cache.has(entreprise.roleId)) {
+          return interaction.reply({
+            content: "⛔ Tu ne peux gérer que le service de ton entreprise.",
+            ephemeral: true
+          });
+        }
+      }
+
+      if (interaction.customId === "service_select_on") {
+        entreprise.service = "🟢 En service";
+        entreprise.serviceStart = Date.now();
+        entreprise.alertSent = false;
+      } else {
+        entreprise.service = "🔴 Hors service";
+        entreprise.serviceStart = null;
+        entreprise.alertSent = false;
+      }
+
+      saveData();
+      await updateServices();
+      await updateEntreprises();
+
+      return interaction.update({
+        content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
+        components: []
+      });
     }
-
-    if (interaction.customId === "service_select_on") {
-      entreprise.service = "🟢 En service";
-      entreprise.serviceStart = Date.now();
-      entreprise.alertSent = false;
-    } else {
-      entreprise.service = "🔴 Hors service";
-      entreprise.serviceStart = null;
-      entreprise.alertSent = false;
-    }
-
-    saveData();
-    await updateServices();
-    await updateEntreprises();
-
-    return interaction.update({
-      content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
-      components: []
-    });
   }
-}
+
   if (interaction.isModalSubmit()) {
     if (interaction.customId === "absence_modal_declare") {
-      await interaction.deferReply({ ephemeral: true });
-
       const pseudo = interaction.fields.getTextInputValue("pseudo");
       const entreprise = interaction.fields.getTextInputValue("entreprise");
       const duree = interaction.fields.getTextInputValue("duree");
@@ -1161,8 +1318,9 @@ if (interaction.isStringSelectMenu()) {
       await channel.send({ embeds: [embed] });
       await sendAbsencePanelAtBottom(channel);
 
-      return interaction.editReply({
-        content: "✅ Ton absence a été déclarée. Le rôle absent et le préfixe `[ABS]` ont été appliqués."
+      return interaction.reply({
+        content: "✅ Ton absence a été déclarée. Le rôle absent et le préfixe `[ABS]` ont été appliqués.",
+        ephemeral: true
       });
     }
   }
@@ -1193,6 +1351,15 @@ if (interaction.isStringSelectMenu()) {
     });
   }
 
+  if (cmd === "serveur-xml-maj") {
+    await refreshVeryGamesXml(true);
+
+    return interaction.reply({
+      content: "✅ Panel serveur XML mis à jour.",
+      ephemeral: true
+    });
+  }
+
   if (cmd === "nomserveur") {
     stats.nomServeur = interaction.options.getString("nom");
   }
@@ -1202,17 +1369,15 @@ if (interaction.isStringSelectMenu()) {
   }
 
   if (cmd === "absencepanel") {
-    await interaction.deferReply({ ephemeral: true });
-
     const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
     await sendAbsencePanelAtBottom(channel);
 
-    return interaction.editReply({
-      content: "✅ Panel des absences installé."
+    return interaction.reply({
+      content: "✅ Panel des absences installé.",
+      ephemeral: true
     });
   }
-
-  if (cmd === "sanction") {
+    if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
@@ -1259,7 +1424,8 @@ if (interaction.isStringSelectMenu()) {
             `📌 Type : **Mute**\n` +
             `⏱️ Durée : **${duree} minute(s)**\n` +
             `📄 Motif : **${motif}**\n` +
-            `🛡️ Staff : ${interaction.user}`
+            `🛡️ Staff : ${interaction.user}`,
+          ephemeral: true
         });
       }
 
@@ -1282,7 +1448,8 @@ if (interaction.isStringSelectMenu()) {
             `🔊 **Sanction levée**\n\n` +
             `👤 Joueur : ${member}\n` +
             `📌 Type : **Unmute**\n` +
-            `🛡️ Staff : ${interaction.user}`
+            `🛡️ Staff : ${interaction.user}`,
+          ephemeral: true
         });
       }
 
@@ -1308,7 +1475,8 @@ if (interaction.isStringSelectMenu()) {
             `👤 Joueur : **${userTag}**\n` +
             `📌 Type : **Ban**\n` +
             `📄 Motif : **${motif}**\n` +
-            `🛡️ Staff : ${interaction.user}`
+            `🛡️ Staff : ${interaction.user}`,
+          ephemeral: true
         });
       }
 
@@ -1334,7 +1502,8 @@ if (interaction.isStringSelectMenu()) {
             `👤 Joueur : **${userTag}**\n` +
             `📌 Type : **Kick**\n` +
             `📄 Motif : **${motif}**\n` +
-            `🛡️ Staff : ${interaction.user}`
+            `🛡️ Staff : ${interaction.user}`,
+          ephemeral: true
         });
       }
 
@@ -1352,7 +1521,8 @@ if (interaction.isStringSelectMenu()) {
             `👤 Joueur : ${member}\n` +
             `📌 Type : **Warn**\n` +
             `📄 Motif : **${motif}**\n` +
-            `🛡️ Staff : ${interaction.user}`
+            `🛡️ Staff : ${interaction.user}`,
+          ephemeral: true
         });
       }
     } catch (error) {
@@ -1809,6 +1979,8 @@ if (interaction.isStringSelectMenu()) {
     if (ABSENCES_CHANNEL_ID !== "ID_DU_SALON_ABSENCE") {
       await updateAbsencePanel();
     }
+
+    await refreshVeryGamesXml(false);
 
     return interaction.reply({ content: "✅ Panels mis à jour.", ephemeral: true });
   }
