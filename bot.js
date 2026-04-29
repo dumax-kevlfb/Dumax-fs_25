@@ -89,6 +89,21 @@ function isServiceAllowed(member) {
   return member.roles.cache.some(r => r.name === SERVICE_ROLE_NAME);
 }
 
+async function fetchChannelSafe(channelId, label) {
+  try {
+    if (!channelId || channelId.includes("METTRE_ID")) {
+      console.error(`❌ Salon non configuré : ${label}`);
+      return null;
+    }
+
+    return await client.channels.fetch(channelId);
+  } catch (error) {
+    console.error(`❌ Salon introuvable ou inaccessible (${label}) : ${channelId}`);
+    console.error(error.message);
+    return null;
+  }
+}
+
 function loadData() {
   if (fs.existsSync(DATA_FILE)) stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   if (fs.existsSync(ENTREPRISES_FILE)) entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
@@ -142,6 +157,7 @@ function addSanctionHistory({ type, member, userTag, motif, duree, staff }) {
 
   saveData();
 }
+
 function parseAmount(value) {
   const cleaned = String(value)
     .replace(/\s/g, "")
@@ -353,7 +369,8 @@ async function sendAbsencePanelAtBottom(channel) {
 }
 
 async function updateAbsencePanel() {
-  const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+  const channel = await fetchChannelSafe(ABSENCES_CHANNEL_ID, "absences");
+  if (!channel) return;
 
   if (!absencesPanelMessage) {
     absencesPanelMessage = await fetchPanelMessage(channel, "Absences");
@@ -374,7 +391,7 @@ async function updateAbsencePanel() {
 }
 
 /* ================================
-   🔥 NOUVEAU : PANEL VERYGAMES XML
+   PANEL VERYGAMES XML
 ================================ */
 
 function createXmlEmbed(players, maxPlayers) {
@@ -392,7 +409,8 @@ function createXmlEmbed(players, maxPlayers) {
 }
 
 async function updateXmlPanel(players, maxPlayers) {
-  const channel = await client.channels.fetch(XML_CHANNEL_ID);
+  const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
+  if (!channel) return;
 
   if (!xmlPanelMessage) {
     xmlPanelMessage = await fetchPanelMessage(channel, "État du serveur Farming");
@@ -409,6 +427,7 @@ async function updateXmlPanel(players, maxPlayers) {
     embeds: [createXmlEmbed(players, maxPlayers)]
   });
 }
+
 function extractXmlData(result) {
   const json = JSON.stringify(result);
 
@@ -457,16 +476,25 @@ function extractXmlData(result) {
 }
 
 async function fetchVeryGamesXmlData() {
-  const response = await fetch(VERYGAMES_XML_URL);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
 
-  if (!response.ok) {
-    throw new Error(`Erreur HTTP XML : ${response.status}`);
+  try {
+    const response = await fetch(VERYGAMES_XML_URL, {
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP XML : ${response.status}`);
+    }
+
+    const xml = await response.text();
+    const result = await xml2js.parseStringPromise(xml);
+
+    return extractXmlData(result);
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const xml = await response.text();
-  const result = await xml2js.parseStringPromise(xml);
-
-  return extractXmlData(result);
 }
 
 async function refreshVeryGamesXml(sendLogs = false) {
@@ -480,7 +508,8 @@ async function refreshVeryGamesXml(sendLogs = false) {
 
   try {
     const { players, maxPlayers } = await fetchVeryGamesXmlData();
-    const channel = await client.channels.fetch(XML_CHANNEL_ID);
+    const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
+    if (!channel) return;
 
     await updateXmlPanel(players, maxPlayers);
 
@@ -513,7 +542,6 @@ function startVeryGamesXmlLoop() {
     await refreshVeryGamesXml(true);
   }, XML_REFRESH_INTERVAL);
 }
-
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -535,7 +563,8 @@ async function updatePanel() {
     .setFooter({ text: "Dumax FS25 • Panel officiel" })
     .setTimestamp();
 
-  const channel = await client.channels.fetch(CHANNEL_ID);
+  const channel = await fetchChannelSafe(CHANNEL_ID, "panel principal");
+  if (!channel) return;
 
   if (!panelMessage) {
     panelMessage = await fetchPanelMessage(channel, "PRÉFECTURE AGRICOLE");
@@ -585,7 +614,8 @@ async function updateEntreprises() {
     });
   }
 
-  const channel = await client.channels.fetch(ENTREPRISES_CHANNEL_ID);
+  const channel = await fetchChannelSafe(ENTREPRISES_CHANNEL_ID, "entreprises");
+  if (!channel) return;
 
   if (!entreprisesMessage) {
     entreprisesMessage = await fetchPanelMessage(channel, "REGISTRE DES ENTREPRISES");
@@ -598,6 +628,7 @@ async function updateEntreprises() {
 
   await entreprisesMessage.edit({ embeds: [embed] });
 }
+
 async function updateServices() {
   const enService = entreprises.filter(e => e.service === "🟢 En service");
   const horsService = entreprises.filter(e => e.service !== "🟢 En service");
@@ -631,7 +662,8 @@ async function updateServices() {
     .setFooter({ text: "Dumax FS25 • Tableau opérationnel" })
     .setTimestamp();
 
-  const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
+  const channel = await fetchChannelSafe(SERVICES_CHANNEL_ID, "services");
+  if (!channel) return;
 
   if (!servicesMessage) {
     servicesMessage = await fetchPanelMessage(channel, "ENTREPRISES EN SERVICES");
@@ -672,7 +704,9 @@ function startServiceAlertLoop() {
         !e.alertSent &&
         now - e.serviceStart >= 60 * 60 * 1000
       ) {
-        const channel = await client.channels.fetch(SERVICES_CHANNEL_ID);
+        const channel = await fetchChannelSafe(SERVICES_CHANNEL_ID, "services");
+        if (!channel) return;
+
         const mention = await getServiceRoleMention(channel.guild);
 
         const embed = new EmbedBuilder()
@@ -696,7 +730,6 @@ function startServiceAlertLoop() {
     if (updated) saveData();
   }, 5 * 60 * 1000);
 }
-
 const commands = [
   {
     name: "sanction",
@@ -793,7 +826,7 @@ const commands = [
       ]
     }]
   },
-    {
+  {
     name: "fermestotales",
     description: "Définir le nombre de fermes totales",
     type: 1,
@@ -1198,7 +1231,13 @@ client.on("interactionCreate", async interaction => {
 
       saveData();
 
-      const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+      const channel = await fetchChannelSafe(ABSENCES_CHANNEL_ID, "absences");
+      if (!channel) {
+        return interaction.reply({
+          content: "✅ Ton absence a bien été terminée, mais le salon absences est introuvable.",
+          ephemeral: true
+        });
+      }
 
       const embed = new EmbedBuilder()
         .setTitle("✅ Absence terminée")
@@ -1276,8 +1315,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-
-  if (interaction.isModalSubmit()) {
+    if (interaction.isModalSubmit()) {
     if (interaction.customId === "absence_modal_declare") {
       const pseudo = interaction.fields.getTextInputValue("pseudo");
       const entreprise = interaction.fields.getTextInputValue("entreprise");
@@ -1300,7 +1338,14 @@ client.on("interactionCreate", async interaction => {
 
       saveData();
 
-      const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+      const channel = await fetchChannelSafe(ABSENCES_CHANNEL_ID, "absences");
+
+      if (!channel) {
+        return interaction.reply({
+          content: "✅ Ton absence a été déclarée, mais le salon absences est introuvable.",
+          ephemeral: true
+        });
+      }
 
       const embed = new EmbedBuilder()
         .setTitle("📋 Nouvelle absence déclarée")
@@ -1352,11 +1397,12 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (cmd === "serveur-xml-maj") {
+    await interaction.deferReply({ ephemeral: true });
+
     await refreshVeryGamesXml(true);
 
-    return interaction.reply({
-      content: "✅ Panel serveur XML mis à jour.",
-      ephemeral: true
+    return interaction.editReply({
+      content: "✅ Tentative de mise à jour du panel serveur XML effectuée."
     });
   }
 
@@ -1369,7 +1415,15 @@ client.on("interactionCreate", async interaction => {
   }
 
   if (cmd === "absencepanel") {
-    const channel = await client.channels.fetch(ABSENCES_CHANNEL_ID);
+    const channel = await fetchChannelSafe(ABSENCES_CHANNEL_ID, "absences");
+
+    if (!channel) {
+      return interaction.reply({
+        content: "❌ Salon absences introuvable ou inaccessible.",
+        ephemeral: true
+      });
+    }
+
     await sendAbsencePanelAtBottom(channel);
 
     return interaction.reply({
@@ -1377,7 +1431,8 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-    if (cmd === "sanction") {
+
+  if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
@@ -1479,8 +1534,7 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
       }
-
-      if (type === "kick") {
+            if (type === "kick") {
         if (!member.kickable) {
           return interaction.reply({ content: "❌ Impossible d’expulser ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
         }
@@ -1742,8 +1796,8 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const ch = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await ch.send({ content: entreprise.patron, embeds: [embed] });
+    const ch = await fetchChannelSafe(AMENDES_CHANNEL_ID, "amendes");
+    if (ch) await ch.send({ content: entreprise.patron, embeds: [embed] });
 
     return interaction.reply({ content: `✅ Amende ${numero} envoyée.`, ephemeral: true });
   }
@@ -1775,8 +1829,8 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const ch = await client.channels.fetch(AMENDES_CHANNEL_ID);
-    await ch.send({ content: amende.patron, embeds: [embed] });
+    const ch = await fetchChannelSafe(AMENDES_CHANNEL_ID, "amendes");
+    if (ch) await ch.send({ content: amende.patron, embeds: [embed] });
 
     return interaction.reply({ content: `✅ Amende ${numero} annulée.`, ephemeral: true });
   }
@@ -1855,8 +1909,8 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const ch = await client.channels.fetch(PRIMES_CHANNEL_ID);
-    await ch.send({ content: entreprise.patron, embeds: [embed] });
+    const ch = await fetchChannelSafe(PRIMES_CHANNEL_ID, "primes");
+    if (ch) await ch.send({ content: entreprise.patron, embeds: [embed] });
 
     return interaction.reply({ content: `✅ Prime ${numero} envoyée.`, ephemeral: true });
   }
@@ -1888,8 +1942,8 @@ client.on("interactionCreate", async interaction => {
       .setFooter({ text: "Dumax FS25 • Autorité financière RP" })
       .setTimestamp();
 
-    const ch = await client.channels.fetch(PRIMES_CHANNEL_ID);
-    await ch.send({ content: prime.patron, embeds: [embed] });
+    const ch = await fetchChannelSafe(PRIMES_CHANNEL_ID, "primes");
+    if (ch) await ch.send({ content: prime.patron, embeds: [embed] });
 
     return interaction.reply({ content: `✅ Prime ${numero} annulée.`, ephemeral: true });
   }
