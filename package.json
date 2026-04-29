@@ -1,19 +1,25 @@
 {
+  "name": "dumax-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord RP Farming avec intégration VeryGames XML",
+  "main": "bot.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js"
+  },
   "dependencies": {
     "discord.js": "^14.26.3",
     "node-fetch": "^3.3.2",
     "xml2js": "^0.6.2"
   },
-  "name": "dumax-bot",
-  "version": "1.0.0",
-  "description": "",
-  "main": "bot.js",
-  "devDependencies": {},
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "keywords": [
+    "discord",
+    "bot",
+    "farming-simulator",
+    "rp",
+    "verygames"
+  ],
+  "author": "Kevin",
+  "license": "ISC"
 }
