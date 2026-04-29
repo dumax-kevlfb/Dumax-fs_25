@@ -132,7 +132,6 @@ function saveData() {
   fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
   fs.writeFileSync(ABSENCES_FILE, JSON.stringify(absences, null, 2));
 }
-
 function getNextSanctionNumber() {
   const max = sanctions.reduce((highest, s) => {
     const n = parseInt(s.id, 10);
@@ -408,6 +407,18 @@ function createXmlEmbed(players, maxPlayers) {
     .setTimestamp();
 }
 
+function createXmlWaitingEmbed() {
+  return new EmbedBuilder()
+    .setTitle("🖥️ État du serveur Farming")
+    .setDescription(
+      "⏳ Connexion au serveur VeryGames en cours...\n\n" +
+      "_Aucune donnée XML récupérée pour le moment._"
+    )
+    .setColor(0xf1c40f)
+    .setFooter({ text: "Dumax FS25 • Monitoring serveur" })
+    .setTimestamp();
+}
+
 async function updateXmlPanel(players, maxPlayers) {
   const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
   if (!channel) return;
@@ -427,7 +438,6 @@ async function updateXmlPanel(players, maxPlayers) {
     embeds: [createXmlEmbed(players, maxPlayers)]
   });
 }
-
 function extractXmlData(result) {
   const json = JSON.stringify(result);
 
@@ -536,7 +546,21 @@ function startVeryGamesXmlLoop() {
   if (veryGamesXmlIntervalStarted) return;
   veryGamesXmlIntervalStarted = true;
 
-  refreshVeryGamesXml(false);
+  (async () => {
+    const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
+
+    if (channel && !xmlPanelMessage) {
+      xmlPanelMessage = await fetchPanelMessage(channel, "État du serveur Farming");
+
+      if (!xmlPanelMessage) {
+        xmlPanelMessage = await channel.send({
+          embeds: [createXmlWaitingEmbed()]
+        });
+      }
+    }
+
+    await refreshVeryGamesXml(false);
+  })();
 
   setInterval(async () => {
     await refreshVeryGamesXml(true);
@@ -1119,8 +1143,7 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-
-    if (interaction.customId === "absence_button_declare") {
+        if (interaction.customId === "absence_button_declare") {
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
@@ -1315,7 +1338,8 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-    if (interaction.isModalSubmit()) {
+
+  if (interaction.isModalSubmit()) {
     if (interaction.customId === "absence_modal_declare") {
       const pseudo = interaction.fields.getTextInputValue("pseudo");
       const entreprise = interaction.fields.getTextInputValue("entreprise");
@@ -1431,8 +1455,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-
-  if (cmd === "sanction") {
+    if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
@@ -1534,7 +1557,8 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
       }
-            if (type === "kick") {
+
+      if (type === "kick") {
         if (!member.kickable) {
           return interaction.reply({ content: "❌ Impossible d’expulser ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
         }
