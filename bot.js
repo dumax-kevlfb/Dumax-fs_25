@@ -279,13 +279,7 @@ function createServiceButtons() {
         .setCustomId("service_button_off")
         .setLabel("Quitter le service")
         .setEmoji("🔴")
-        .setStyle(ButtonStyle.Danger),
-
-      new ButtonBuilder()
-        .setCustomId("service_button_view")
-        .setLabel("Voir les services")
-        .setEmoji("📋")
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Danger)
     )
   ];
 }
@@ -686,7 +680,7 @@ const commands = [
     description: "Mettre à jour les panels",
     type: 1
   },
-  {
+    {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
     type: 1,
@@ -711,7 +705,9 @@ const commands = [
     name: "entreprise-retirer",
     description: "Retirer une entreprise",
     type: 1,
-    options: [{ name: "entreprise", description: "Entreprise à retirer", type: 3, required: true, autocomplete: true }]
+    options: [
+      { name: "entreprise", description: "Entreprise à retirer", type: 3, required: true, autocomplete: true }
+    ]
   },
   {
     name: "recrutement",
@@ -731,7 +727,7 @@ const commands = [
       }
     ]
   },
-    {
+  {
     name: "service",
     description: "Prendre ou quitter le service d’une entreprise",
     type: 1,
@@ -781,13 +777,17 @@ const commands = [
     name: "amende-annuler",
     description: "Annuler une amende RP",
     type: 1,
-    options: [{ name: "numero", description: "Numéro de l’amende à annuler", type: 3, required: true }]
+    options: [
+      { name: "numero", description: "Numéro de l’amende à annuler", type: 3, required: true }
+    ]
   },
   {
     name: "amendes-historique",
     description: "Afficher l’historique des amendes d’une entreprise",
     type: 1,
-    options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
+    ]
   },
   {
     name: "prime",
@@ -803,13 +803,17 @@ const commands = [
     name: "prime-annuler",
     description: "Annuler une prime RP",
     type: 1,
-    options: [{ name: "numero", description: "Numéro de la prime à annuler", type: 3, required: true }]
+    options: [
+      { name: "numero", description: "Numéro de la prime à annuler", type: 3, required: true }
+    ]
   },
   {
     name: "primes-historique",
     description: "Afficher l’historique des primes d’une entreprise",
     type: 1,
-    options: [{ name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }]
+    options: [
+      { name: "entreprise", description: "Entreprise concernée", type: 3, required: true, autocomplete: true }
+    ]
   },
   {
     name: "primes-classement",
@@ -831,7 +835,6 @@ async function registerCommands() {
     console.error("❌ Erreur enregistrement slash commands :", error);
   }
 }
-
 client.once("ready", async () => {
   console.log(`✅ Connecté : ${client.user.tag}`);
 
@@ -873,6 +876,7 @@ client.once("ready", async () => {
 
   startServiceAlertLoop();
 });
+
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
     const focusedValue = interaction.options.getFocused().toLowerCase();
@@ -920,38 +924,6 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({
         content: "🚜 Sélectionne l’entreprise concernée :",
         components: createServiceSelect(customId, userEntreprises, placeholder),
-        ephemeral: true
-      });
-    }
-
-    if (interaction.customId === "service_button_view") {
-      const enService = entreprises.filter(e => e.service === "🟢 En service");
-      const horsService = entreprises.filter(e => e.service !== "🟢 En service");
-
-      const blocEnService = enService.length
-        ? enService.map(e => `**${e.nom}**`).join("\n")
-        : "_Aucune entreprise en service_";
-
-      const blocHorsService = horsService.length
-        ? horsService.map(e => `**${e.nom}**`).join("\n")
-        : "_Aucune entreprise hors service_";
-
-      const embed = new EmbedBuilder()
-        .setTitle("📋 État actuel des services")
-        .setDescription(
-          `🟢 **EN SERVICE (${enService.length})**\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `${blocEnService}\n\n` +
-          `🔴 **HORS SERVICE (${horsService.length})**\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `${blocHorsService}`
-        )
-        .setColor(enService.length > 0 ? 0x2ecc71 : 0xe74c3c)
-        .setFooter({ text: "Dumax FS25 • Consultation service" })
-        .setTimestamp();
-
-      return interaction.reply({
-        embeds: [embed],
         ephemeral: true
       });
     }
@@ -1046,8 +1018,7 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-
-    if (interaction.customId === "absence_button_end") {
+        if (interaction.customId === "absence_button_end") {
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
@@ -1096,7 +1067,8 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-    if (interaction.isStringSelectMenu()) {
+
+  if (interaction.isStringSelectMenu()) {
     if (
       interaction.customId === "service_select_on" ||
       interaction.customId === "service_select_off"
@@ -1208,8 +1180,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-
-  if (!interaction.isChatInputCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
   const staff = isStaff(interaction.member);
@@ -1363,7 +1334,8 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
       }
-            if (type === "kick") {
+
+      if (type === "kick") {
         if (!member.kickable) {
           return interaction.reply({ content: "❌ Impossible d’expulser ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
         }
@@ -1410,7 +1382,10 @@ client.on("interactionCreate", async interaction => {
       }
     } catch (error) {
       console.error(error);
-      return interaction.reply({ content: "❌ Une erreur est survenue pendant l’application de la sanction.", ephemeral: true });
+      return interaction.reply({
+        content: "❌ Une erreur est survenue pendant l’application de la sanction.",
+        ephemeral: true
+      });
     }
   }
 
