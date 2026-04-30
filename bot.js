@@ -14,8 +14,6 @@ const {
 
 const { REST } = require("@discordjs/rest");
 const fs = require("fs");
-const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
-const xml2js = require("xml2js");
 
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
@@ -31,10 +29,6 @@ const SERVICES_CHANNEL_ID = "1498067350818738176";
 const PRIMES_CHANNEL_ID = "1498064143394148502";
 const ABSENCES_CHANNEL_ID = "1498597445758746664";
 const ABSENT_ROLE_ID = "1498607458187350017";
-
-const XML_CHANNEL_ID = "1498925367443066930";
-const VERYGAMES_XML_URL = "http://si-12625.dg.vg:8080/feed/dedicated-server-stats.xml?code=6bqwp6ka35e99sng7izc3gly1r2h";
-const XML_REFRESH_INTERVAL = 60 * 1000;
 
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
 const SERVICE_ROLE_NAME = "━━━ 🚜 ENTREPRISES AGRICOLES ━━━";
@@ -74,10 +68,7 @@ let panelMessage = null;
 let entreprisesMessage = null;
 let servicesMessage = null;
 let absencesPanelMessage = null;
-let xmlPanelMessage = null;
-let lastXmlPlayers = [];
 let serviceAlertIntervalStarted = false;
-let veryGamesXmlIntervalStarted = false;
 
 function isStaff(member) {
   if (!member || !member.roles) return false;
@@ -103,7 +94,6 @@ async function fetchChannelSafe(channelId, label) {
     return null;
   }
 }
-
 function loadData() {
   if (fs.existsSync(DATA_FILE)) stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   if (fs.existsSync(ENTREPRISES_FILE)) entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
@@ -122,6 +112,10 @@ function loadData() {
   };
 
   if (!Array.isArray(absences)) absences = [];
+  if (!Array.isArray(entreprises)) entreprises = [];
+  if (!Array.isArray(amendes)) amendes = [];
+  if (!Array.isArray(primes)) primes = [];
+  if (!Array.isArray(sanctions)) sanctions = [];
 }
 
 function saveData() {
@@ -132,6 +126,7 @@ function saveData() {
   fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
   fs.writeFileSync(ABSENCES_FILE, JSON.stringify(absences, null, 2));
 }
+
 function getNextSanctionNumber() {
   const max = sanctions.reduce((highest, s) => {
     const n = parseInt(s.id, 10);
@@ -210,7 +205,6 @@ async function fetchPanelMessage(channel, titlePart) {
     m.embeds[0]?.title?.includes(titlePart)
   );
 }
-
 function getMemberEntreprises(member) {
   const staff = isStaff(member);
 
@@ -271,6 +265,7 @@ async function removeAbsenceStatus(member) {
     console.error("Erreur retrait [ABS] pseudo :", error.message);
   }
 }
+
 function createServiceButtons() {
   return [
     new ActionRowBuilder().addComponents(
@@ -336,7 +331,6 @@ function createAbsenceButtons() {
     )
   ];
 }
-
 function createAbsencePanelEmbed() {
   return new EmbedBuilder()
     .setTitle("📅 Absences")
@@ -389,183 +383,6 @@ async function updateAbsencePanel() {
   });
 }
 
-/* ================================
-   PANEL VERYGAMES XML
-================================ */
-
-function createXmlEmbed(players, maxPlayers) {
-  return new EmbedBuilder()
-    .setTitle("🖥️ État du serveur Farming")
-    .setDescription(
-      `👥 Joueurs en ligne : **${players.length}/${maxPlayers}**\n\n` +
-      (players.length
-        ? players.map(p => `• ${p}`).join("\n")
-        : "_Aucun joueur connecté_")
-    )
-    .setColor(players.length > 0 ? 0x2ecc71 : 0xe74c3c)
-    .setFooter({ text: "Dumax FS25 • Monitoring serveur" })
-    .setTimestamp();
-}
-
-function createXmlWaitingEmbed() {
-  return new EmbedBuilder()
-    .setTitle("🖥️ État du serveur Farming")
-    .setDescription(
-      "⏳ Connexion au serveur VeryGames en cours...\n\n" +
-      "_Aucune donnée XML récupérée pour le moment._"
-    )
-    .setColor(0xf1c40f)
-    .setFooter({ text: "Dumax FS25 • Monitoring serveur" })
-    .setTimestamp();
-}
-
-async function updateXmlPanel(players, maxPlayers) {
-  const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
-  if (!channel) return;
-
-  if (!xmlPanelMessage) {
-    xmlPanelMessage = await fetchPanelMessage(channel, "État du serveur Farming");
-
-    if (!xmlPanelMessage) {
-      xmlPanelMessage = await channel.send({
-        embeds: [createXmlEmbed(players, maxPlayers)]
-      });
-      return;
-    }
-  }
-
-  await xmlPanelMessage.edit({
-    embeds: [createXmlEmbed(players, maxPlayers)]
-  });
-}
-function extractXmlData(result) {
-  const json = JSON.stringify(result);
-
-  const players = [];
-
-  function scan(obj) {
-    if (!obj || typeof obj !== "object") return;
-
-    if (Array.isArray(obj)) {
-      for (const item of obj) scan(item);
-      return;
-    }
-
-    if (obj.$) {
-      const possibleName =
-        obj.$.name ||
-        obj.$.playerName ||
-        obj.$.nickname ||
-        obj.$.username;
-
-      if (possibleName && !players.includes(possibleName)) {
-        players.push(possibleName);
-      }
-    }
-
-    for (const key of Object.keys(obj)) {
-      scan(obj[key]);
-    }
-  }
-
-  scan(result);
-
-  let maxPlayers = "?";
-
-  const maxMatch =
-    json.match(/"maxPlayers":\["?(\d+)"?\]/i) ||
-    json.match(/"slots":\["?(\d+)"?\]/i) ||
-    json.match(/"capacity":\["?(\d+)"?\]/i);
-
-  if (maxMatch) maxPlayers = maxMatch[1];
-
-  return {
-    players,
-    maxPlayers
-  };
-}
-
-async function fetchVeryGamesXmlData() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch(VERYGAMES_XML_URL, {
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      throw new Error(`Erreur HTTP XML : ${response.status}`);
-    }
-
-    const xml = await response.text();
-    const result = await xml2js.parseStringPromise(xml);
-
-    return extractXmlData(result);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function refreshVeryGamesXml(sendLogs = false) {
-  if (
-    XML_CHANNEL_ID === "METTRE_ID_DU_SALON_XML_ICI" ||
-    VERYGAMES_XML_URL === "METTRE_LIEN_XML_VERYGAMES_ICI"
-  ) {
-    console.log("⚠️ Monitoring XML non configuré : XML_CHANNEL_ID ou VERYGAMES_XML_URL manquant.");
-    return;
-  }
-
-  try {
-    const { players, maxPlayers } = await fetchVeryGamesXmlData();
-    const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
-    if (!channel) return;
-
-    await updateXmlPanel(players, maxPlayers);
-
-    if (sendLogs) {
-      const joined = players.filter(p => !lastXmlPlayers.includes(p));
-      const left = lastXmlPlayers.filter(p => !players.includes(p));
-
-      for (const player of joined) {
-        await channel.send(`🟢 **${player}** vient de se connecter au serveur.`);
-      }
-
-      for (const player of left) {
-        await channel.send(`🔴 **${player}** vient de quitter le serveur.`);
-      }
-    }
-
-    lastXmlPlayers = players;
-  } catch (error) {
-    console.error("Erreur monitoring XML VeryGames :", error.message);
-  }
-}
-
-function startVeryGamesXmlLoop() {
-  if (veryGamesXmlIntervalStarted) return;
-  veryGamesXmlIntervalStarted = true;
-
-  (async () => {
-    const channel = await fetchChannelSafe(XML_CHANNEL_ID, "xml");
-
-    if (channel && !xmlPanelMessage) {
-      xmlPanelMessage = await fetchPanelMessage(channel, "État du serveur Farming");
-
-      if (!xmlPanelMessage) {
-        xmlPanelMessage = await channel.send({
-          embeds: [createXmlWaitingEmbed()]
-        });
-      }
-    }
-
-    await refreshVeryGamesXml(false);
-  })();
-
-  setInterval(async () => {
-    await refreshVeryGamesXml(true);
-  }, XML_REFRESH_INTERVAL);
-}
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -601,7 +418,6 @@ async function updatePanel() {
 
   await panelMessage.edit({ embeds: [embed] });
 }
-
 async function updateEntreprises() {
   const openCount = entreprises.filter(e => (e.recrutement || "").includes("Ouvert")).length;
 
@@ -689,16 +505,14 @@ async function updateServices() {
   const channel = await fetchChannelSafe(SERVICES_CHANNEL_ID, "services");
   if (!channel) return;
 
-  if (!servicesMessage) {
-    servicesMessage = await fetchPanelMessage(channel, "ENTREPRISES EN SERVICES");
+  servicesMessage = await fetchPanelMessage(channel, "ENTREPRISES EN SERVICES");
 
-    if (!servicesMessage) {
-      servicesMessage = await channel.send({
-        embeds: [embed],
-        components: createServiceButtons()
-      });
-      return;
-    }
+  if (!servicesMessage) {
+    servicesMessage = await channel.send({
+      embeds: [embed],
+      components: createServiceButtons()
+    });
+    return;
   }
 
   await servicesMessage.edit({
@@ -751,7 +565,11 @@ function startServiceAlertLoop() {
       }
     }
 
-    if (updated) saveData();
+    if (updated) {
+      saveData();
+      await updateServices();
+      await updateEntreprises();
+    }
   }, 5 * 60 * 1000);
 }
 const commands = [
@@ -827,11 +645,6 @@ const commands = [
   {
     name: "absencepanel",
     description: "Installer ou remettre le panneau de gestion des absences",
-    type: 1
-  },
-  {
-    name: "serveur-xml-maj",
-    description: "Forcer la mise à jour du panel serveur XML",
     type: 1
   },
   {
@@ -918,7 +731,7 @@ const commands = [
       }
     ]
   },
-  {
+    {
     name: "service",
     description: "Prendre ou quitter le service d’une entreprise",
     type: 1,
@@ -1059,7 +872,6 @@ client.once("ready", async () => {
   }
 
   startServiceAlertLoop();
-  startVeryGamesXmlLoop();
 });
 client.on("interactionCreate", async interaction => {
   if (interaction.isAutocomplete()) {
@@ -1143,7 +955,8 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-        if (interaction.customId === "absence_button_declare") {
+
+    if (interaction.customId === "absence_button_declare") {
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
@@ -1283,8 +1096,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-
-  if (interaction.isStringSelectMenu()) {
+    if (interaction.isStringSelectMenu()) {
     if (
       interaction.customId === "service_select_on" ||
       interaction.customId === "service_select_off"
@@ -1318,6 +1130,8 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      await interaction.deferUpdate();
+
       if (interaction.customId === "service_select_on") {
         entreprise.service = "🟢 En service";
         entreprise.serviceStart = Date.now();
@@ -1329,10 +1143,11 @@ client.on("interactionCreate", async interaction => {
       }
 
       saveData();
+
       await updateServices();
       await updateEntreprises();
 
-      return interaction.update({
+      return interaction.editReply({
         content: `✅ Service mis à jour pour **${entreprise.nom}** : ${entreprise.service}`,
         components: []
       });
@@ -1420,16 +1235,6 @@ client.on("interactionCreate", async interaction => {
     });
   }
 
-  if (cmd === "serveur-xml-maj") {
-    await interaction.deferReply({ ephemeral: true });
-
-    await refreshVeryGamesXml(true);
-
-    return interaction.editReply({
-      content: "✅ Tentative de mise à jour du panel serveur XML effectuée."
-    });
-  }
-
   if (cmd === "nomserveur") {
     stats.nomServeur = interaction.options.getString("nom");
   }
@@ -1455,7 +1260,8 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-    if (cmd === "sanction") {
+
+  if (cmd === "sanction") {
     const type = interaction.options.getString("type");
     const member = interaction.options.getMember("joueur");
     const motif = interaction.options.getString("motif");
@@ -1557,8 +1363,7 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
       }
-
-      if (type === "kick") {
+            if (type === "kick") {
         if (!member.kickable) {
           return interaction.reply({ content: "❌ Impossible d’expulser ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
         }
@@ -1773,6 +1578,7 @@ client.on("interactionCreate", async interaction => {
     }
 
     saveData();
+
     await updateServices();
     await updateEntreprises();
 
@@ -2057,8 +1863,6 @@ client.on("interactionCreate", async interaction => {
     if (ABSENCES_CHANNEL_ID !== "ID_DU_SALON_ABSENCE") {
       await updateAbsencePanel();
     }
-
-    await refreshVeryGamesXml(false);
 
     return interaction.reply({ content: "✅ Panels mis à jour.", ephemeral: true });
   }
