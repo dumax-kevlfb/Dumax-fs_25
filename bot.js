@@ -903,32 +903,12 @@ client.on("messageCreate", async (message) => {
   if (!message.guild) return;
   if (message.channel.id !== VOTES_CHANNEL_ID) return;
 
-  // Ne pas répondre à son propre message de lien
+  // On ignore uniquement les messages envoyés par TON bot
   if (message.author.id === client.user.id) return;
 
-  const embedText = message.embeds
-    .map(embed => [
-      embed.title,
-      embed.description,
-      ...(embed.fields?.map(f => `${f.name} ${f.value}`) || [])
-    ].filter(Boolean).join(" "))
-    .join(" ");
-
-  const content = `${message.content || ""} ${embedText}`.toLowerCase();
-
-  console.log("📩 Message détecté dans le salon vote :", content);
-
-  if (
-    !content.includes("vient de voter") &&
-    !content.includes("a voté") &&
-    !content.includes("vote pour le serveur") &&
-    !content.includes("merci d'avoir voté") &&
-    !content.includes("top-serveurs")
-  ) {
-    return;
-  }
-
   try {
+    console.log("📩 Message/API détecté dans le salon vote.");
+
     const oldMessageId = loadVoteLinkMessageId();
 
     if (oldMessageId) {
@@ -938,8 +918,8 @@ client.on("messageCreate", async (message) => {
 
     const newMessage = await message.channel.send({
       content:
-        `🙏 **Pour voter :** ${VOTE_LINK}\n` +
-        `🌾 Merci pour votre soutien au serveur **Dumax FS25** !`
+        `🙏 **Lien de vote :** ${VOTE_LINK}\n` +
+        `🌾 Merci de soutenir le serveur **Dumax FS25** !`
     });
 
     saveVoteLinkMessageId(newMessage.id);
