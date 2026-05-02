@@ -903,28 +903,30 @@ client.on("messageCreate", async (message) => {
   if (!message.guild) return;
   if (message.channel.id !== VOTES_CHANNEL_ID) return;
 
-  // On ignore uniquement les messages envoyés par TON bot
+  // Ignore les messages du bot lui-même
   if (message.author.id === client.user.id) return;
 
   try {
     console.log("📩 Message/API détecté dans le salon vote.");
 
-    const oldMessageId = loadVoteLinkMessageId();
+    // 🔥 On récupère les derniers messages
+    const messages = await message.channel.messages.fetch({ limit: 10 });
 
-    if (oldMessageId) {
-      const oldMessage = await message.channel.messages.fetch(oldMessageId).catch(() => null);
-      if (oldMessage) await oldMessage.delete().catch(() => null);
+    // 🔥 On supprime les anciens liens envoyés par le bot
+    const botMessages = messages.filter(m => m.author.id === client.user.id);
+
+    for (const msg of botMessages.values()) {
+      await msg.delete().catch(() => null);
     }
 
-    const newMessage = await message.channel.send({
+    // 🔥 On envoie le nouveau lien
+    await message.channel.send({
       content:
         `🙏 **Lien de vote :** <${VOTE_LINK}>\n` +
         `🌾 Merci de soutenir le serveur **Dumax FS25** !`
     });
 
-    saveVoteLinkMessageId(newMessage.id);
-
-    console.log("✅ Lien de vote renvoyé.");
+    console.log("✅ Ancien lien supprimé + nouveau envoyé.");
   } catch (error) {
     console.error("Erreur système lien vote :", error);
   }
