@@ -918,7 +918,7 @@ client.on("messageCreate", async (message) => {
 
     const newMessage = await message.channel.send({
       content:
-        `🙏 **Lien de vote :** ${VOTE_LINK}\n` +
+        `🙏 **Lien de vote :** <${VOTE_LINK}>\n` +
         `🌾 Merci de soutenir le serveur **Dumax FS25** !`
     });
 
