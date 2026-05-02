@@ -902,11 +902,31 @@ client.once("ready", async () => {
 client.on("messageCreate", async (message) => {
   if (!message.guild) return;
   if (message.channel.id !== VOTES_CHANNEL_ID) return;
+
+  // Ne pas répondre à son propre message de lien
   if (message.author.id === client.user.id) return;
 
-  const content = message.content.toLowerCase();
+  const embedText = message.embeds
+    .map(embed => [
+      embed.title,
+      embed.description,
+      ...(embed.fields?.map(f => `${f.name} ${f.value}`) || [])
+    ].filter(Boolean).join(" "))
+    .join(" ");
 
-  if (!content.includes("vient de voter pour le serveur")) return;
+  const content = `${message.content || ""} ${embedText}`.toLowerCase();
+
+  console.log("📩 Message détecté dans le salon vote :", content);
+
+  if (
+    !content.includes("vient de voter") &&
+    !content.includes("a voté") &&
+    !content.includes("vote pour le serveur") &&
+    !content.includes("merci d'avoir voté") &&
+    !content.includes("top-serveurs")
+  ) {
+    return;
+  }
 
   try {
     const oldMessageId = loadVoteLinkMessageId();
@@ -923,6 +943,8 @@ client.on("messageCreate", async (message) => {
     });
 
     saveVoteLinkMessageId(newMessage.id);
+
+    console.log("✅ Lien de vote renvoyé.");
   } catch (error) {
     console.error("Erreur système lien vote :", error);
   }
