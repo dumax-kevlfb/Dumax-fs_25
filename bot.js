@@ -30,6 +30,11 @@ const PRIMES_CHANNEL_ID = "1498064143394148502";
 const ABSENCES_CHANNEL_ID = "1498597445758746664";
 const ABSENT_ROLE_ID = "1498607458187350017";
 
+// ===== SYSTÈME VOTE TOP-SERVEUR =====
+const VOTES_CHANNEL_ID = "1499279452402614353";
+const VOTE_LINK = "https://top-serveurs.net/discord/vote/fs-25-serveur-dumax";
+const VOTE_LINK_FILE = "./vote-link-message.json";
+
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
 const SERVICE_ROLE_NAME = "━━━ 🚜 ENTREPRISES AGRICOLES ━━━";
 const SERVER_NAME = "Dumax FS25";
@@ -45,7 +50,9 @@ const ABSENCES_FILE = "./absences.json";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -69,7 +76,6 @@ let entreprisesMessage = null;
 let servicesMessage = null;
 let absencesPanelMessage = null;
 let serviceAlertIntervalStarted = false;
-
 function isStaff(member) {
   if (!member || !member.roles) return false;
   return member.roles.cache.some(r => r.name === STAFF_ROLE_NAME);
@@ -94,6 +100,7 @@ async function fetchChannelSafe(channelId, label) {
     return null;
   }
 }
+
 function loadData() {
   if (fs.existsSync(DATA_FILE)) stats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   if (fs.existsSync(ENTREPRISES_FILE)) entreprises = JSON.parse(fs.readFileSync(ENTREPRISES_FILE, "utf8"));
@@ -125,6 +132,20 @@ function saveData() {
   fs.writeFileSync(PRIMES_FILE, JSON.stringify(primes, null, 2));
   fs.writeFileSync(SANCTIONS_FILE, JSON.stringify(sanctions, null, 2));
   fs.writeFileSync(ABSENCES_FILE, JSON.stringify(absences, null, 2));
+}
+
+function loadVoteLinkMessageId() {
+  try {
+    if (!fs.existsSync(VOTE_LINK_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(VOTE_LINK_FILE, "utf8"));
+    return data.messageId || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveVoteLinkMessageId(messageId) {
+  fs.writeFileSync(VOTE_LINK_FILE, JSON.stringify({ messageId }, null, 2));
 }
 
 function getNextSanctionNumber() {
@@ -171,7 +192,6 @@ function formatMoney(value, prefix = "") {
     maximumFractionDigits: 2
   }).format(amount)} ${CURRENCY}`;
 }
-
 function getColorByStatus() {
   if (stats.statut.includes("En ligne")) return 0x2ecc71;
   if (stats.statut.includes("développement")) return 0xf39c12;
@@ -205,6 +225,7 @@ async function fetchPanelMessage(channel, titlePart) {
     m.embeds[0]?.title?.includes(titlePart)
   );
 }
+
 function getMemberEntreprises(member) {
   const staff = isStaff(member);
 
@@ -265,7 +286,6 @@ async function removeAbsenceStatus(member) {
     console.error("Erreur retrait [ABS] pseudo :", error.message);
   }
 }
-
 function createServiceButtons() {
   return [
     new ActionRowBuilder().addComponents(
@@ -325,6 +345,7 @@ function createAbsenceButtons() {
     )
   ];
 }
+
 function createAbsencePanelEmbed() {
   return new EmbedBuilder()
     .setTitle("📅 Absences")
@@ -376,7 +397,6 @@ async function updateAbsencePanel() {
     components: createAbsenceButtons()
   });
 }
-
 async function updatePanel() {
   const embed = new EmbedBuilder()
     .setTitle("🏛️ ━━ PRÉFECTURE AGRICOLE ━━")
@@ -412,6 +432,7 @@ async function updatePanel() {
 
   await panelMessage.edit({ embeds: [embed] });
 }
+
 async function updateEntreprises() {
   const openCount = entreprises.filter(e => (e.recrutement || "").includes("Ouvert")).length;
 
@@ -462,7 +483,6 @@ async function updateEntreprises() {
 
   await entreprisesMessage.edit({ embeds: [embed] });
 }
-
 async function updateServices() {
   const enService = entreprises.filter(e => e.service === "🟢 En service");
   const horsService = entreprises.filter(e => e.service !== "🟢 En service");
@@ -680,7 +700,7 @@ const commands = [
     description: "Mettre à jour les panels",
     type: 1
   },
-    {
+  {
     name: "entreprise-ajouter",
     description: "Ajouter une entreprise",
     type: 1,
@@ -745,7 +765,7 @@ const commands = [
       }
     ]
   },
-  {
+   {
     name: "service-forcer",
     description: "Forcer le statut de service d’une entreprise",
     type: 1,
@@ -875,6 +895,37 @@ client.once("ready", async () => {
   }
 
   startServiceAlertLoop();
+});
+
+// ===== SYSTÈME VOTE TOP-SERVEUR =====
+
+client.on("messageCreate", async (message) => {
+  if (!message.guild) return;
+  if (message.channel.id !== VOTES_CHANNEL_ID) return;
+  if (message.author.id === client.user.id) return;
+
+  const content = message.content.toLowerCase();
+
+  if (!content.includes("vient de voter pour le serveur")) return;
+
+  try {
+    const oldMessageId = loadVoteLinkMessageId();
+
+    if (oldMessageId) {
+      const oldMessage = await message.channel.messages.fetch(oldMessageId).catch(() => null);
+      if (oldMessage) await oldMessage.delete().catch(() => null);
+    }
+
+    const newMessage = await message.channel.send({
+      content:
+        `🙏 **Pour voter :** ${VOTE_LINK}\n` +
+        `🌾 Merci pour votre soutien au serveur **Dumax FS25** !`
+    });
+
+    saveVoteLinkMessageId(newMessage.id);
+  } catch (error) {
+    console.error("Erreur système lien vote :", error);
+  }
 });
 
 client.on("interactionCreate", async interaction => {
@@ -1018,7 +1069,8 @@ client.on("interactionCreate", async interaction => {
         ephemeral: true
       });
     }
-        if (interaction.customId === "absence_button_end") {
+
+    if (interaction.customId === "absence_button_end") {
       const activeAbsence = absences.find(a =>
         a.userId === interaction.user.id &&
         a.statut === "ACTIVE"
@@ -1067,8 +1119,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-
-  if (interaction.isStringSelectMenu()) {
+    if (interaction.isStringSelectMenu()) {
     if (
       interaction.customId === "service_select_on" ||
       interaction.customId === "service_select_off"
@@ -1180,7 +1231,8 @@ client.on("interactionCreate", async interaction => {
       });
     }
   }
-    if (!interaction.isChatInputCommand()) return;
+
+  if (!interaction.isChatInputCommand()) return;
 
   const cmd = interaction.commandName;
   const staff = isStaff(interaction.member);
@@ -1283,8 +1335,7 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
       }
-
-      if (type === "unmute") {
+        if (type === "unmute") {
         if (!member.moderatable) {
           return interaction.reply({ content: "❌ Impossible d’unmute ce membre. Vérifie la hiérarchie des rôles.", ephemeral: true });
         }
@@ -1469,8 +1520,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-
-  if (cmd === "statut") {
+    if (cmd === "statut") {
     const value = interaction.options.getString("statut");
     const map = {
       online: "🟢 En ligne",
@@ -1562,8 +1612,7 @@ client.on("interactionCreate", async interaction => {
       ephemeral: true
     });
   }
-
-  if (cmd === "amende") {
+    if (cmd === "amende") {
     const nom = interaction.options.getString("entreprise");
     const montant = interaction.options.getString("montant");
     const motif = interaction.options.getString("motif");
@@ -1639,8 +1688,7 @@ client.on("interactionCreate", async interaction => {
 
     return interaction.reply({ content: `✅ Amende ${numero} annulée.`, ephemeral: true });
   }
-
-  if (cmd === "amendes-historique") {
+    if (cmd === "amendes-historique") {
     const nom = interaction.options.getString("entreprise");
 
     const historique = amendes
@@ -1719,8 +1767,7 @@ client.on("interactionCreate", async interaction => {
 
     return interaction.reply({ content: `✅ Prime ${numero} envoyée.`, ephemeral: true });
   }
-
-  if (cmd === "prime-annuler") {
+    if (cmd === "prime-annuler") {
     const numero = interaction.options.getString("numero").padStart(4, "0");
     const prime = primes.find(p => p.numero === numero);
 
