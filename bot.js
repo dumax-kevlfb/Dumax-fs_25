@@ -554,7 +554,7 @@ function startServiceAlertLoop() {
         e.service === "🟢 En service" &&
         e.serviceStart &&
         !e.alertSent &&
-        now - e.serviceStart >= 60 * 60 * 1000
+        now - e.serviceStart >= 999999999999
       ) {
         const channel = await fetchChannelSafe(SERVICES_CHANNEL_ID, "services");
         if (!channel) return;
