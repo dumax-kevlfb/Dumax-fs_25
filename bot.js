@@ -32,7 +32,7 @@ const ABSENT_ROLE_ID = "1498607458187350017";
 
 // ===== SYSTÈME VOTE TOP-SERVEUR =====
 const VOTES_CHANNEL_ID = "1499279452402614353";
-const VOTE_LINK = "https://top-serveurs.net/discord/vote/fs-25-serveur-dumax";
+const VOTE_LINK = "https://top-serveurs.net/discord/vote/le-mechet-dumax";
 const VOTE_LINK_FILE = "./vote-link-message.json";
 
 const STAFF_ROLE_NAME = "━━━ ⚡️ STAFF ━━━";
